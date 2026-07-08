@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:lucide_icons/lucide_icons.dart';
+import 'package:lucide_icons_flutter/lucide_icons_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:agent/src/logic/auth/auth_cubit.dart';
 import 'package:agent/src/models/message.dart';
