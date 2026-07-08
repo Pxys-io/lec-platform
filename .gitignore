@@ -17,11 +17,12 @@ dist/
 build/
 *.whl
 
-# Video storage
+# Video storage & segments
 storage/
 *.mp4
-*.ts
-*.m3u8
+
+# Databases
+*.db
 
 # IDE
 .vscode/
@@ -37,5 +38,5 @@ Thumbs.db
 .venv/
 venv/
 
-# TypeScript
+# TypeScript build
 *.tsbuildinfo
