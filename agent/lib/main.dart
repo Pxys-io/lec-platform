@@ -47,6 +47,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiRepositoryProvider(
       providers: [
+        RepositoryProvider.value(value: backend.apiClient),
         RepositoryProvider.value(value: backend.auth),
         RepositoryProvider.value(value: backend.users),
         RepositoryProvider.value(value: backend.courses),
