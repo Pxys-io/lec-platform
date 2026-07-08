@@ -1,0 +1,41 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+*.pyo
+
+# Environment files (secrets)
+.env
+.env.*
+
+# Logs
+*.log
+
+# Python build artifacts
+*.egg-info/
+dist/
+build/
+*.whl
+
+# Video storage
+storage/
+*.mp4
+*.ts
+*.m3u8
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Virtual environments
+.venv/
+venv/
+
+# TypeScript
+*.tsbuildinfo

@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>beIN Medicine — Pricing Calculator</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+  font-family:'Inter',-apple-system,sans-serif;
+  background:#faf5eb;color:#2c2c2c;padding:2rem 1.5rem;min-height:100vh;
+}
+.container{max-width:1000px;margin:0 auto}
+
+.brand{display:flex;align-items:center;gap:0.8rem;margin-bottom:0.3rem}
+.brand .logo{width:40px;height:40px;background:linear-gradient(135deg,#2b6c8f,#3e9bc4);border-radius:12px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:1.2rem;font-weight:700}
+.brand h1{font-size:1.5rem;font-weight:700;color:#1a3a4a;letter-spacing:-0.3px}
+.tagline{font-size:0.85rem;color:#7a8a8f;font-weight:300;margin-bottom:2rem}
+
+.total-bar{
+  background:#fff;border-radius:20px;padding:1.5rem 2rem;
+  box-shadow:0 2px 20px rgba(0,0,0,0.04);margin-bottom:1.5rem;
+  display:flex;justify-content:space-between;align-items:center;
+  border:1px solid #f0e8d8;
+}
+.total-bar .left .lbl{font-size:0.8rem;color:#8a9aa0;font-weight:400}
+.total-bar .left .num{font-size:1.2rem;font-weight:600;color:#1a3a4a;margin-top:2px}
+.total-bar .left .sub{font-size:0.72rem;color:#b0b8bd;margin-top:2px}
+.total-right{text-align:right}
+.total-right .lbl{font-size:0.75rem;color:#8a9aa0;font-weight:400}
+.total-right .val{font-size:2rem;font-weight:800;color:#1a3a4a;letter-spacing:-1px}
+.total-right .sub{font-size:0.72rem;color:#b0b8bd;margin-top:2px}
+
+.tag{
+  font-size:0.55rem;padding:2px 7px;border-radius:4px;font-weight:600;flex-shrink:0;letter-spacing:0.2px;
+}
+.tag-man{background:#e8f0f5;color:#2b6c8f}
+.tag-def{background:#e6f3ed;color:#1a8a5c}
+.tag-dep{background:#f5e8e8;color:#b84a4a}
+
+.cat{
+  background:#fff;border-radius:16px;margin-bottom:0.7rem;
+  overflow:hidden;border:1px solid #f0e8d8;transition:box-shadow 0.2s;
+}
+.cat:hover{box-shadow:0 2px 12px rgba(0,0,0,0.03)}
+.cat-hd{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:0.8rem 1.3rem;cursor:pointer;user-select:none;
+  transition:background 0.2s;
+}
+.cat-hd:hover{background:#faf6ef}
+.cat-hd .l{display:flex;align-items:center;gap:0.6rem}
+.cat-hd .nm{font-weight:600;font-size:0.9rem;color:#1a3a4a}
+.cat-hd .cnt{font-size:0.6rem;color:#8a9aa0;background:#f0ebe2;padding:2px 7px;border-radius:6px;font-weight:500}
+.cat-hd .chev{color:#c0b8a8;font-size:0.7rem;transition:transform 0.25s}
+.cat-hd .chev.op{transform:rotate(180deg)}
+.cat-hd .cp{font-weight:600;color:#2b6c8f;font-size:0.85rem}
+.cat-body{padding:0 1.3rem 0.7rem;display:none}
+.cat-body.op{display:block}
+
+.item{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:0.4rem 0;border-bottom:1px solid #f5f0e8;gap:0.5rem;
+}
+.item:last-child{border-bottom:none}
+.item .l{display:flex;align-items:center;gap:0.5rem;flex:1;min-width:0}
+.item .cb{
+  width:18px;height:18px;border-radius:5px;
+  border:2px solid #d0c8b8;background:#fff;
+  cursor:pointer;display:flex;align-items:center;justify-content:center;
+  flex-shrink:0;transition:all 0.2s;
+}
+.item .cb:hover{border-color:#2b6c8f}
+.item .cb.chk{background:#2b6c8f;border-color:#2b6c8f}
+.item .cb.chk::after{content:'✓';color:#fff;font-size:10px;font-weight:700}
+.item .cb.dis{cursor:not-allowed;opacity:0.5;border-color:#b0bfc8;background:#e8f0f5}
+.item .cb.dis::after{content:'✓';color:#8aa0ac;font-size:10px;font-weight:700}
+.item .cb.par-dis{cursor:not-allowed;opacity:0.3;border-color:#d0c8b8}
+.item .nm{font-size:0.84rem;color:#3a3a3a;font-weight:400}
+.item .pr{font-size:0.82rem;color:#2b6c8f;font-weight:500;white-space:nowrap;flex-shrink:0}
+.item .pr .free{color:#8a9aa0;font-weight:300}
+
+.child-wrap{border-left:2px solid #f0e8d8;margin-left:9px;padding-left:1rem}
+
+.proposal-section{margin-top:2rem;text-align:center}
+.proposal-section p{font-size:0.82rem;color:#7a8a8f;margin-bottom:1rem}
+.proposal-section button{
+  padding:1rem 2.5rem;border-radius:16px;border:none;
+  background:linear-gradient(135deg,#1a3a4a,#2b6c8f);
+  color:#fff;font-size:1rem;font-weight:600;cursor:pointer;
+  transition:all 0.2s;font-family:'Inter',sans-serif;
+  box-shadow:0 4px 20px rgba(43,108,143,0.2);
+}
+.proposal-section button:hover{transform:translateY(-2px);box-shadow:0 6px 25px rgba(43,108,143,0.3)}
+
+.footer{text-align:center;color:#b0b8bd;font-size:0.7rem;margin-top:2.5rem;font-weight:300}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="brand">
+    <div class="logo">B</div>
+    <h1>beIN Medicine</h1>
+  </div>
+  <div class="tagline" id="tagline">Online Medical Education Platform — Pricing Calculator</div>
+
+  <div class="total-bar" id="totalBar">
+    <div class="left">
+      <div class="lbl">Included Items</div>
+      <div class="num"><span id="selCount">0</span> of <span id="totCount">0</span></div>
+      <div class="sub">Base: <strong>200,000 EGP</strong> (all mandatory &amp; zero-price features)</div>
+    </div>
+    <div class="total-right">
+      <div class="lbl">Estimated Total</div>
+      <div class="val" id="grandTotal">200,000</div>
+      <div class="sub" id="totalSub">EGP</div>
+    </div>
+  </div>
+
+  <div id="categories"></div>
+
+  <div class="proposal-section" id="proposalSection">
+    <p>Review your selected package and request a formal proposal</p>
+    <button onclick="requestProposal()">📄 Download Proposal (PDF)</button>
+  </div>
+
+  <div class="footer">beIN Medicine · All values in EGP</div>
+</div>
+
+<script>
+const SHOW_PRICES = true;
+
+if (!SHOW_PRICES) {
+  document.getElementById('totalBar').style.display = 'none';
+  document.getElementById('proposalSection').style.display = 'none';
+  document.getElementById('tagline').textContent = 'Online Medical Education Platform — Complete Feature List';
+  document.title = 'beIN Medicine — Feature List';
+}
+
+const DATA = {"categories":[{"name":"Authentication & User System","items":[{"id":1000,"n":"JWT login / refresh / register","p":-1},{"id":1001,"n":"Role-based access","p":-1},{"id":1002,"n":"Profile management + password change","p":-1},{"id":1003,"n":"Device-aware login with device limits","p":-3000},{"id":1004,"n":"Ban / unban user","p":-1}]},    {"name":"Course & Lesson Management","items":[{"id":1005,"n":"Full CRUD courses","p":-5000.1},{"id":1006,"n":"Full CRUD lessons with ordering","p":-5000.1},{"id":1007,"n":"Tag-based course discovery","p":-1},{"id":1008,"n":"Per-instructor course ownership","p":-1},{"id":1009,"n":"Publish / unpublish lessons","p":-1},{"id":1010,"n":"Lesson locking (previous lesson / quiz gate)","p":-1000},{"id":1011,"n":"Supplementary materials (PDF, doc, link, image)","p":-5000}]},    {"name":"Video Engine","items":[{"id":1012,"n":"Video Engine","p":-15000,"children":[{"id":1013,"n":"ffmpeg HLS transcoding (360p / 480p / 720p / 1080p)","p":-1},{"id":1014,"n":"Obfuscated content storage (tamper-resistant)","p":-1},{"id":1015,"n":"Chunked video upload with progress tracking","p":-1},{"id":1016,"n":"Multi-threaded transcode worker","p":-1},{"id":1018,"n":"Background job processor + kill capability","p":-1},{"id":1019,"n":"Database-backed cache with TTL","p":-1},{"id":1020,"n":"Stream-level cryptographic protection","p":-5000}]}]},    {"name":"Content Security Suite","items":[{"id":1021,"n":"Per-user forensic watermarking","p":-15000,"children":[{"id":1022,"n":"Multiple embedding techniques","p":-1},{"id":1023,"n":"Stream-level protection markers","p":-1},{"id":1024,"n":"High-throughput watermark generation pipeline","p":-1}]},{"id":1025,"n":"Watermark configuration: appearance, placement, frequency","p":-4000},{"id":1026,"n":"Strategic fingerprint injection at multiple points","p":-3000}]},    {"name":"Quiz & Question Bank System","items":[{"id":1027,"n":"CRUD quizzes linked to lessons","p":-1},{"id":1028,"n":"CRUD questions (multiple choice) with scoring","p":-1},{"id":1029,"n":"Quiz submission, auto-scoring, pass / fail","p":-1},{"id":1030,"n":"Stand-alone Question Banks (subject-tagged)","p":-1},{"id":1031,"n":"Session-based practice: subject filtering & random selection","p":-1},{"id":1032,"n":"QBank enrollment (free / paid) with approval workflow","p":-1}]},    {"name":"Access Control & Enrollment","items":[{"id":1033,"n":"Per-course & per-lesson granular access grants","p":-1},{"id":1034,"n":"Access code generation (duration, max uses, expiry)","p":-7000},{"id":1035,"n":"Code validation with usage tracking","p":-1},{"id":1036,"n":"Enrollment request workflow with custom forms","p":-10000},{"id":1037,"n":"Image upload for enrollment proof of payment","p":-1},{"id":1038,"n":"Approval / rejection with admin comments","p":-1}]},    {"name":"Analytics & Statistics","items":[{"id":1039,"n":"Overview stats (users, courses, lessons)","p":-14000,"children":[{"id":1040,"n":"New users & active users per month","p":-500},{"id":1041,"n":"Weekly unique users (4-week trailing)","p":-500},{"id":1042,"n":"Monthly watch stats (6-month trailing)","p":0},{"id":1043,"n":"Per-course stats: views, completion rate & expiring enrollments","p":-1000},{"id":1044,"n":"Instructor stats (super admin view)","p":-500},{"id":1045,"n":"Continue watching (5 most recent incomplete lessons)","p":0}]}]},    {"name":"Certificates","items":[{"id":1046,"n":"Certificate claiming per course (all quizzes passed)","p":-5000},{"id":1047,"n":"Hashed certificate IDs + expiry dates","p":-1},{"id":1048,"n":"User certificate listing + admin view all","p":-1}]},    {"name":"Communication & Moderation","items":[{"id":1049,"n":"Direct messaging (send, receive, mark read)","p":-15000},{"id":1050,"n":"Lesson comments with threaded replies","p":-5000},{"id":1051,"n":"Reporting system (video, lesson, comment, etc.)","p":-1},{"id":1052,"n":"Report resolution workflow","p":-1}]},    {"name":"Panic Mode & Server Config","items":[{"id":1053,"n":"Global / per-user / per-platform panic mode","p":-15000,"children":[{"id":1054,"n":"Force webview URL on client devices","p":-1},{"id":1055,"n":"Dynamic server mode (hybrid / cloud / local)","p":-1},{"id":1056,"n":"Download policy, mode mismatch action & remote video deletion","p":-1},{"id":1057,"n":"Per-video policy (auto-delete, ban, mode)","p":-1},{"id":1058,"n":"App handshake endpoint","p":-1}]}]},    {"name":"Admin Dashboard (React)","items":[{"id":1059,"n":"Full Admin Dashboard","p":-30000,"children":[{"id":1060,"n":"Dashboard — overview stats with charts","p":0},{"id":1061,"n":"User management (list, detail, ban, access grants)","p":0},{"id":1062,"n":"Course management + detail + enrollment config","p":0},{"id":1063,"n":"Lesson management + detail + edit + lock config","p":0},{"id":1064,"n":"Video management + upload + transcode jobs","p":0},{"id":1065,"n":"Quiz builder with question editor","p":0},{"id":1066,"n":"QBank detail + enrollment management","p":0},{"id":1067,"n":"Access codes generator + management","p":0},{"id":1068,"n":"Enrollment requests approval dashboard","p":0},{"id":1069,"n":"Reports management + resolution","p":0},{"id":1070,"n":"Panic mode configuration UI","p":0},{"id":1071,"n":"Certificates viewer","p":0}]}]},    {"name":"Flutter Mobile App","items":[{"id":1072,"n":"Auth flow (login, register, token persistence)","p":-1},{"id":1073,"n":"Course discovery & listing dashboard","p":-1},{"id":1074,"n":"Lesson viewer with lock state","p":-1},{"id":1075,"n":"HLS video player with progress tracking","p":-1},{"id":1076,"n":"Quiz taking UI with scoring","p":-1},{"id":1077,"n":"QBank practice sessions","p":-1},{"id":1078,"n":"Continue watching","p":-1},{"id":1079,"n":"Comments + threaded replies","p":-1},{"id":1080,"n":"Direct messaging","p":-1},{"id":1081,"n":"Download manager (offline playback)","p":-1},{"id":1082,"n":"Document / PDF viewer","p":-1},{"id":1083,"n":"Profile, settings, password change","p":-1},{"id":1084,"n":"Report submission UI","p":-1},{"id":1085,"n":"Panic mode compliance + handshake","p":-1},{"id":1086,"n":"Light / dark theme + BLoC state management","p":-1},{"id":1087,"n":"Cross-platform (Android, iOS, Web, Desktop)","p":-1}]},    {"name":"Infrastructure & DevOps","items":[{"id":1088,"n":"One-command setup script (setup.sh)","p":-1},{"id":1089,"n":"Cloudflare Tunnel auto-provisioning","p":1500},{"id":1090,"n":"Auto .env generation + URL management","p":-1},{"id":1091,"n":"Database seeding (users + test data)","p":-1},{"id":1092,"n":"Smoke test + E2E test suite","p":-1},{"id":1093,"n":"Port management + conflict resolution","p":-1},{"id":1094,"n":"18 main-server API tests (100% pass)","p":-1},{"id":1095,"n":"12 video-server integration tests (100% pass)","p":-1}]}]};
+
+const BASE = 200000;
+
+// p: -1/0 → free mandatory. p: -.1 suffix → cost mandatory. p: <-1 → default ON. p: >0 → optional.
+function isMan(p){return p===-1||p===0||(p<0&&!Number.isInteger(p))}
+function isFree(p){return p===-1||p===0}
+function absP(p){return Math.abs(Math.trunc(p))}
+
+function isCh(id){
+  const v=localStorage.getItem('chk-'+id);
+  if(v===null)return true;
+  return v==='1';
+}
+function setCh(id,v){localStorage.setItem('chk-'+id,v?'1':'0')}
+
+function render(){
+  const cont=document.getElementById('categories');
+  cont.innerHTML='';
+  let totalSel=0,totalPrice=BASE,totalItems=0;
+
+  DATA.categories.forEach((cat,ci)=>{
+    let ic=0;
+    cat.items.forEach(it=>{ic++;if(it.children)ic+=it.children.length});
+    if(SHOW_PRICES)totalItems+=ic;
+    const isOp=SHOW_PRICES?localStorage.getItem('co-'+ci)!=='false':true;
+
+    let cSum=0;
+    if(SHOW_PRICES)cat.items.forEach(it=>{
+      const pc=isCh(it.id);
+      if(pc&&!isFree(it.p)){cSum+=absP(it.p);totalSel++;totalPrice+=absP(it.p)}
+      if(it.children)it.children.forEach(ch=>{
+        const cc=pc&&isCh(ch.id);
+        if(cc&&!isFree(ch.p)){cSum+=absP(ch.p);totalSel++;totalPrice+=absP(ch.p)}
+      });
+    });
+
+    let body='';
+    cat.items.forEach(it=>{
+      body+=renderItem(it,null);
+      if(it.children&&it.children.length){
+        body+='<div class="child-wrap">';
+        it.children.forEach(ch=>body+=renderItem(ch,it.id));
+        body+='</div>';
+      }
+    });
+
+    const div=document.createElement('div');div.className='cat';
+    const hr=SHOW_PRICES?`<div style="display:flex;align-items:center;gap:0.6rem"><span class="cp">${cSum.toLocaleString()} EGP</span><span class="chev ${isOp?'op':''}">▼</span></div>`:'';
+    div.innerHTML=`<div class="cat-hd" ${SHOW_PRICES?`onclick="toggleCat(${ci})"`:''}>
+      <div class="l"><span class="nm">${cat.name}</span>${SHOW_PRICES?`<span class="cnt">${ic}</span>`:''}</div>
+      ${hr}
+    </div><div class="cat-body ${isOp?'op':''}">${body}</div>`;
+    cont.appendChild(div);
+  });
+
+  if(SHOW_PRICES){
+    document.getElementById('totCount').textContent=totalItems;
+    document.getElementById('selCount').textContent=totalSel;
+    document.getElementById('grandTotal').textContent=totalPrice.toLocaleString();
+  }
+}
+
+function renderItem(it,parentId){
+  if(!SHOW_PRICES){
+    return `<div class="item"><div class="l"><span class="nm">${it.n}</span></div></div>`;
+  }
+  const isPar=parentId===null;
+  const parent=isPar?null:(()=>{for(const c of DATA.categories)for(const i of c.items)if(i.children&&i.children.some(x=>x.id===it.id))return i;return null})();
+  const pc=isPar||(parent?isCh(parent.id):true);
+  const checked=isCh(it.id);
+  const man=isMan(it.p);
+  const p=it.p;
+
+  let cbCl='cb';
+  if(isPar){if(man)cbCl+=' dis';else if(checked)cbCl+=' chk'}
+  else{if(!pc)cbCl+=' par-dis';else if(man)cbCl+=' dis';else if(checked)cbCl+=' chk'}
+
+  let tag='';
+  if(p===-1||p===0)tag='<span class="tag tag-man">mandatory</span>';
+  else if(man)tag='';
+  else if(!isPar&&!pc)tag='';
+  else tag='<span class="tag tag-def">default ON</span>';
+
+  const click=isPar?(man?'':`tog(${it.id})`):(pc&&!man?`tog(${it.id})`:'');
+
+  let priceStr;
+  if(p===-1)priceStr='—';
+  else if(p===0)priceStr='<span class="free">included</span>';
+  else priceStr=absP(p).toLocaleString()+' EGP';
+
+  return `<div class="item">
+    <div class="l">
+      <div class="${cbCl}" onclick="${click}"></div>
+      <span class="nm">${it.n} ${tag}</span>
+    </div>
+    <span class="pr">${priceStr}</span>
+  </div>`;
+}
+
+function toggleCat(ci){
+  if(!SHOW_PRICES)return;
+  const k='co-'+ci;
+  localStorage.setItem(k,localStorage.getItem(k)!=='false'?'false':'true');
+  render();
+}
+
+function tog(id){
+  if(!SHOW_PRICES)return;
+  setCh(id,!isCh(id));
+  render();
+}
+
+function getSelected(){
+  const sel=[];
+  DATA.categories.forEach(cat=>{
+    cat.items.forEach(it=>{
+      const pc=isCh(it.id);
+      if(pc){
+        sel.push({cat:cat.name,name:it.n,price:isFree(it.p)?0:absP(it.p),mandatory:isMan(it.p)});
+      }
+      if(it.children)it.children.forEach(ch=>{
+        if(pc&&isCh(ch.id)){
+          sel.push({cat:cat.name+' ↳',name:'— '+ch.n,price:isFree(ch.p)?0:absP(ch.p),mandatory:isMan(ch.p)});
+        }
+      });
+    });
+  });
+  return sel;
+}
+
+let savedBody=null;
+window.addEventListener('afterprint',()=>{if(savedBody){document.body.innerHTML=savedBody;savedBody=null;document.title='beIN Medicine — Pricing Calculator';}});
+
+function requestProposal(){
+  const sel=getSelected();
+  const total=BASE+sel.filter(s=>s.price>0).reduce((a,s)=>a+s.price,0);
+
+  const now=new Date();
+  const d=String(now.getDate()).padStart(2,'0');
+  const mo=String(now.getMonth()+1).padStart(2,'0');
+  const y=now.getFullYear();
+  const dateStr=d+'/'+mo+'/'+y;
+  const ref='BMD-'+y+mo+d+'-'+String(Math.floor(Math.random()*9000+1000));
+
+  let itemsHTML='';
+  let lastCat='';
+  sel.forEach(s=>{
+    if(s.cat!==lastCat){
+      if(lastCat)itemsHTML+='</ul>';
+      itemsHTML+=`<h3 style="margin:14px 0 5px;font-size:13px;color:#2b6c8f;">${s.cat}</h3><ul style="margin:0 0 4px 22px;padding:0;">`;
+      lastCat=s.cat;
+    }
+    itemsHTML+=`<li style="margin:3px 0;font-size:12px;color:#333;">${s.name}</li>`;
+  });
+  if(lastCat)itemsHTML+='</ul>';
+
+  const doc=`<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Proposal — beIN Medicine</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Inter',sans-serif;background:#faf5eb;padding:40px;color:#2c2c2c}
+.paper{max-width:800px;margin:0 auto;background:#fff;border-radius:20px;padding:45px;box-shadow:0 2px 30px rgba(0,0,0,0.06)}
+h1{font-size:24px;font-weight:700;color:#1a3a4a;margin-bottom:3px;letter-spacing:-0.3px}
+.sub{font-size:12px;color:#8a9aa0;margin-bottom:25px}
+h2{font-size:14px;font-weight:600;color:#1a3a4a;margin:22px 0 10px;border-bottom:1px solid #f0e8d8;padding-bottom:7px}
+p,li{font-size:12px;line-height:1.7;color:#444}
+table{width:100%;border-collapse:collapse;margin:12px 0;font-size:12px}
+table th{text-align:left;padding:7px 10px;background:#faf6ef;border-bottom:1px solid #f0e8d8;font-weight:600;color:#1a3a4a;font-size:11px}
+table td{padding:7px 10px;border-bottom:1px solid #f5f0e8}
+table .ttl{font-weight:700;color:#1a3a4a}
+.sign{display:flex;justify-content:space-between;margin-top:35px;gap:30px}
+.sign div{flex:1}
+.sign .line{border-bottom:1.5px solid #2c2c2c;margin-top:35px;margin-bottom:4px;height:0}
+.sign .lbl{font-size:10px;color:#8a9aa0;margin-top:3px}
+.footer{text-align:center;font-size:10px;color:#b0b8bd;margin-top:35px}
+@media print{body{background:#fff;padding:0}.paper{box-shadow:none;border-radius:0;padding:40px}}
+</style></head><body>
+<div class="paper">
+  <h1>beIN Medicine — Software Development Proposal</h1>
+  <p class="sub">Date: ${dateStr} · Reference: ${ref}</p>
+
+  <h2>Parties</h2>
+  <p><strong>Party No. 1 (Developer):</strong> Yousef<br>
+  <strong>Party No. 2 (Client):</strong> beIN Medicine</p>
+
+  <h2>Payment Terms</h2>
+  <p><strong>Upfront Payment:</strong> 50,000 EGP due upon signing this proposal.<br>
+  <strong>Total Project Value:</strong> ${total.toLocaleString()} EGP</p>
+
+  <h2>Deliverables — Scope of Work</h2>
+  <p>Party No. 1 (Yousef) agrees to deliver the following items to Party No. 2 (beIN Medicine):</p>
+  ${itemsHTML}
+
+  <h2>Price Summary</h2>
+  <table>
+    <tr><th>Component</th><th style="text-align:right">Amount</th></tr>
+    <tr><td>Base Package (all mandatory features)</td><td style="text-align:right">${BASE.toLocaleString()} EGP</td></tr>
+    ${sel.filter(s=>s.price>0).length?`<tr><td>${sel.filter(s=>s.price>0).length} payable item(s)</td><td style="text-align:right">${(total-BASE).toLocaleString()} EGP</td></tr>`:''}
+    <tr><td class="ttl">Total</td><td class="ttl" style="text-align:right">${total.toLocaleString()} EGP</td></tr>
+  </table>
+  <p style="font-size:11px;color:#8a9aa0;">50,000 EGP upfront payment upon signing. Remaining balance due upon delivery and acceptance of all items.</p>
+
+  <h2>Terms &amp; Conditions</h2>
+  <ol style="margin-left:18px;">
+    <li><strong>Scope:</strong> Party No. 1 (Yousef) shall build and deliver the items listed in the Deliverables section above to Party No. 2 (beIN Medicine).</li>
+    <li><strong>Payment:</strong> Party No. 2 shall pay 50,000 EGP upfront upon signing. The remaining balance is due upon delivery and final acceptance of all deliverables.</li>
+    <li><strong>Acceptance:</strong> Party No. 2 shall have 14 calendar days from delivery notification to review and accept each deliverable or provide reasonable written feedback.</li>
+    <li><strong>Governing Law:</strong> This agreement shall be governed by the laws of the Arab Republic of Egypt.</li>
+  </ol>
+
+  <div class="sign">
+    <div>
+      <p style="font-size:11px;font-weight:600;color:#1a3a4a;">Party No. 1 — Yousef</p>
+      <div class="line"></div>
+      <p class="lbl">Signature &amp; Date</p>
+    </div>
+    <div>
+      <p style="font-size:11px;font-weight:600;color:#1a3a4a;">Party No. 2 — beIN Medicine</p>
+      <div class="line"></div>
+      <p class="lbl">Signature &amp; Date</p>
+    </div>
+  </div>
+
+  <div class="footer">beIN Medicine · This document constitutes a binding agreement upon signature by both parties.</div>
+</div>
+</body></html>`;
+
+  savedBody=document.body.innerHTML;
+  document.body.innerHTML=doc;
+  document.title='beIN Medicine — Proposal';
+  setTimeout(()=>{window.print();},300);
+}
+
+render();
+</script>
+</body>
+</html>
