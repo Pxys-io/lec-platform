@@ -112,10 +112,18 @@ class ApiClient {
     print('╚══════════════════════════════════════════');
   }
 
+  static const _videoServerUrl = String.fromEnvironment(
+    'VIDEO_SERVER_URL',
+    defaultValue: 'https://video.lec.pxysio.top',
+  );
+  static const _videoStreamUrl = String.fromEnvironment(
+    'VIDEO_STREAM_URL',
+    defaultValue: 'https://video.lec.pxysio.top',
+  );
+
   String _replaceLocalhost(String text) {
-    final serverIp = baseUrl.split('://')[1].split('/')[0];
-    var result = text.replaceAll('http://localhost:8000', 'http://$serverIp');
-    result = result.replaceAll('http://localhost:8001', 'http://$serverIp');
+    var result = text.replaceAll('http://localhost:8000', baseUrl.replaceAll('/api/v1', ''));
+    result = result.replaceAll('http://localhost:8001', _videoServerUrl);
     return result;
   }
 

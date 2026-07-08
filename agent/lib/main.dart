@@ -26,8 +26,12 @@ void main() async {
   // Replace '192.168.1.x' with your computer's local IP address on the same network
   final deviceId = await DeviceService.getOrCreatePersistentDeviceId();
   final deviceType = DeviceService.getDeviceType();
+  const apiUrl = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: 'https://main.lec.pxysio.top/api/v1',
+  );
   final backend = Backend.create(
-    'https://citizens-eligible-clicking-went.trycloudflare.com/api/v1',
+    apiUrl,
     deviceId: deviceId,
     deviceType: deviceType,
   );

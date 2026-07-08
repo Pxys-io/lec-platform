@@ -2,7 +2,11 @@ import 'dart:typed_data';
 import 'package:encrypt/encrypt.dart';
 
 class EncryptionHelper {
-  static final _key = Key.fromUtf8('my_32_char_super_secret_key_!!!!'); // 32 bytes for AES-256
+  static const _encryptionKey = String.fromEnvironment(
+    'ENCRYPTION_KEY',
+    defaultValue: 'my_32_char_super_secret_key_!!!!',
+  );
+  static final _key = Key.fromUtf8(_encryptionKey); // 32 bytes for AES-256
   static final _iv = IV.fromLength(16);
 
   static Uint8List encrypt(Uint8List data) {
