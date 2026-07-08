@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:lucide_icons_flutter/lucide_icons_flutter.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../../../logic/stats/stats_cubit.dart';
 
