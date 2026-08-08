@@ -905,17 +905,28 @@ def get_playlist(
 
     prev_was_watermark = False
 
-    # fMP4 videos need their init segment declared before the first fragment
+    # fMP4 fragments need their init segment declared BEFORE each fMP4 run.
+    # Maps are emitted lazily: only right before an actual fMP4 segment, and
+    # re-emitted after a TS watermark segment (overlay/break) - a map followed
+    # by a TS segment breaks strict demuxers (ffmpeg) and confuses players.
     init_key = f"videos/{video_id}/{resolution}/init.mp4"
-    if (
+    has_fmp4_map = (
         video.storage_type == "r2"
         and settings.R2_PUBLIC_DOMAIN
         and storage.r2_enabled()
         and storage.object_exists(init_key)
-    ):
-        if key_url:
-            playlist_lines.append(_key_line(f"init:{video_id}:{resolution}"))
-        playlist_lines.append(f'#EXT-X-MAP:URI="{storage.public_url(init_key)}"')
+    )
+    active_map = None
+
+    def _ensure_main_map():
+        nonlocal active_map
+        if active_map == "main":
+            return
+        if has_fmp4_map:
+            if key_url:
+                playlist_lines.append(_key_line(f"init:{video_id}:{resolution}"))
+            playlist_lines.append(f'#EXT-X-MAP:URI="{storage.public_url(init_key)}"')
+        active_map = "main"
 
     for i, seg in enumerate(segments):
         is_marked = i in mark_indices and video.watermark_enabled
@@ -934,6 +945,7 @@ def get_playlist(
                     f"{proxy_base}/internal/videos/watermark/{res.id}/{user_info_b64}/{eff_break}.ts"
                 )
             prev_was_watermark = True
+            active_map = None
 
         if prev_was_watermark:
             playlist_lines.append("#EXT-X-DISCONTINUITY")
@@ -950,7 +962,9 @@ def get_playlist(
             playlist_lines.append(
                 f"{proxy_base}/internal/videos/{video_id}/overlay/{seg.segment_hash}/{user_info_b64}.ts"
             )
+            active_map = None
         else:
+            _ensure_main_map()
             if key_url:
                 playlist_lines.append(_key_line(f"seg:{seg.segment_hash}"))
             playlist_lines.append(f"#EXTINF:{seg.duration_seconds:.3f},")
