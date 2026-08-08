@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import type { JSX } from 'react'
 import { api } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { Save, AlertTriangle, CheckCircle, ToggleLeft, Code } from 'lucide-react'

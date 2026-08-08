@@ -476,8 +476,8 @@ export default function Videos() {
                     <div>
                       <h3 className="text-sm font-semibold mb-3">Available Qualities</h3>
                       <div className="space-y-2">
-                        {videoDetail.resolutions?.map(res => (
-                          <div key={`${res.resolution}-${res.id}`} className="flex items-center justify-between p-2 rounded-lg border bg-surface text-sm">
+                        {videoDetail.resolutions?.map((res, idx) => (
+                          <div key={`${res.resolution}-${idx}`} className="flex items-center justify-between p-2 rounded-lg border bg-surface text-sm">
                             <span className="font-medium">{res.resolution}</span>
                             <div className="flex items-center gap-4 text-xs text-gray-500">
                               <span>{res.width}x{res.height}</span>

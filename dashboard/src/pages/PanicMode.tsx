@@ -105,7 +105,7 @@ export default function PanicMode() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Target Value</label>
                 <input
                   type="text"
-                  value={form.target_value}
+                  value={form.target_value ?? ''}
                   onChange={(e) => setForm({ ...form, target_value: e.target.value })}
                   placeholder={form.target_type === 'global' ? 'N/A' : 'Enter value...'}
                   disabled={form.target_type === 'global'}

@@ -18,6 +18,19 @@ interface Question {
   order: number
 }
 
+interface QBank {
+  id: string
+  title: string
+  description: string | null
+}
+
+interface Enrollment {
+  id: string
+  qbank_id: string
+  user_id: string
+  status: string
+}
+
 interface Enrollment {
   id: string
   user_id: string
@@ -43,7 +56,7 @@ export default function QBankDetail() {
     points: 1 
   })
 
-  const { data: qbank } = useQuery({
+  const { data: qbank } = useQuery<QBank>({
     queryKey: ['qbanks', id],
     queryFn: () => api.get(`/qbanks/${id}`),
   })
@@ -55,7 +68,7 @@ export default function QBankDetail() {
 
   const { data: enrollments } = useQuery<Enrollment[]>({
     queryKey: ['qbanks', id, 'enrollments'],
-    queryFn: () => api.get('/qbanks/enrollments/all').then(res => res.filter((e: Enrollment) => e.qbank_id === id)),
+    queryFn: () => api.get<Enrollment[]>('/qbanks/enrollments/all').then(res => res.filter((e: Enrollment) => e.qbank_id === id)),
   })
 
   const addQMutation = useMutation({
