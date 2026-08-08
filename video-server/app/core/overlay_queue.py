@@ -87,8 +87,14 @@ class OverlayQueue:
         vf = ",".join(drawtexts)
 
         if job.seg.storage_type == "r2":
-            source = storage.localize(
-                job.seg.storage_path, job.cache_path.parent / "src"
+            source = storage.localize_playable_segment(
+                job.seg.storage_path,
+                job.seg.filename,
+                job.seg.video_id,
+                job.res.resolution,
+                job.seg.segment_hash,
+                job.cache_path.parent / "src",
+                job.encryption_key_hex,
             )
         else:
             source = Path(job.seg.storage_path)
@@ -99,7 +105,7 @@ class OverlayQueue:
             "-fflags", "+genpts",
             "-vf", vf,
             "-map", "0:v:0",
-            "-map", "0:a:0",
+            "-map", "0:a:0?",
             "-c:v", "libx264",
             "-c:a", "copy",
             str(job.cache_path),

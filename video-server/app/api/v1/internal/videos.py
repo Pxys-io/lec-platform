@@ -44,11 +44,13 @@ def _compute_watermark_positions(video, segments, user_email):
     import json as _json
     total_segments = len(segments)
     num_marks = min(total_segments, video.watermark_segments)
-    # Cap marks so the video doesn't drown in break screens:
-    # require at least (break_duration * repeat) of content per inserted break.
-    total_duration = sum(s.duration_seconds for s in segments)
-    spacing = max(1, video.watermark_break_duration * video.watermark_insert_repeat)
-    num_marks = min(num_marks, int(total_duration // spacing))
+    # Insert mode adds break screens, so cap marks to one per (break_duration * repeat)
+    # of content - otherwise short videos drown in breaks. Overlay mode doesn't add
+    # content, so it keeps all requested marks.
+    if video.watermark_mode == "insert":
+        total_duration = sum(s.duration_seconds for s in segments)
+        spacing = max(1, video.watermark_break_duration * video.watermark_insert_repeat)
+        num_marks = min(num_marks, int(total_duration // spacing))
     if num_marks <= 0:
         return {"data": _json.dumps([])}
     if num_marks >= total_segments:
@@ -841,7 +843,7 @@ def get_playlist(
     import json as _json
     pos_cache_key = (
         f"{video.id}-{user_email or 'anon'}-{res.id}-"
-        f"{video.watermark_segments}-{video.watermark_break_duration}-{video.watermark_insert_repeat}"
+        f"{video.watermark_mode}-{video.watermark_segments}-{video.watermark_break_duration}-{video.watermark_insert_repeat}"
     )
     pos_entry = cache_get_or_compute(
         db, pos_cache_key, "watermark_position",
@@ -1024,7 +1026,15 @@ def get_overlay_segment(
         vf = ",".join(drawtexts)
 
         if seg.storage_type == "r2":
-            source = storage.localize(seg.storage_path, temp_dir / "src")
+            source = storage.localize_playable_segment(
+                seg.storage_path,
+                seg.filename,
+                video.id,
+                res.resolution,
+                seg.segment_hash,
+                temp_dir / "src",
+                video.encryption_key_hex,
+            )
         else:
             source = Path(seg.storage_path)
 
@@ -1034,7 +1044,7 @@ def get_overlay_segment(
             "-fflags", "+genpts",
             "-vf", vf,
             "-map", "0:v:0",
-            "-map", "0:a:0",
+            "-map", "0:a:0?",
             "-c:v", "libx264",
             "-c:a", "copy",
             str(overlay_file),

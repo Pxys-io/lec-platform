@@ -146,6 +146,62 @@ def localize(key: str, dest_dir: Path) -> Path:
     return local_path
 
 
+def localize_playable_segment(
+    seg_key: str,
+    seg_filename: str,
+    video_id: str,
+    resolution: str,
+    segment_hash: str,
+    dest_dir: Path,
+    key_hex: Optional[str] = None,
+) -> Path:
+    """Download (and decrypt) a segment so ffmpeg can decode it.
+
+    fMP4 fragments (moof/mdat) are undecodable without their init segment, so the
+    init.mp4 is prepended. Returns a plaintext, playable file path.
+    """
+    from app.core.encryption import derive_segment_iv, decrypt_segment_file
+
+    dest_dir.mkdir(parents=True, exist_ok=True)
+
+    init_key = segment_key(video_id, resolution, "init.mp4")
+    has_init = r2_enabled() and object_exists(init_key)
+
+    if not has_init and not key_hex:
+        return localize(seg_key, dest_dir)
+
+    seg_local = dest_dir / f"seg_{segment_hash}.ts"
+    if not seg_local.exists() or seg_local.stat().st_size == 0:
+        download_file(seg_key, str(seg_local))
+
+    seg_plain = seg_local
+    if key_hex:
+        dec = dest_dir / f"seg_{segment_hash}.plain.ts"
+        if decrypt_segment_file(str(seg_local), str(dec), key_hex, derive_segment_iv(f"seg:{segment_hash}")):
+            seg_plain = dec
+
+    if not has_init:
+        return seg_plain
+
+    init_local = dest_dir / f"init_{video_id[:8]}_{resolution}.mp4"
+    if not init_local.exists() or init_local.stat().st_size == 0:
+        download_file(init_key, str(init_local))
+
+    init_plain = init_local
+    if key_hex:
+        init_dec = dest_dir / f"init_{video_id[:8]}_{resolution}.plain.mp4"
+        if decrypt_segment_file(str(init_local), str(init_dec), key_hex, derive_segment_iv(f"init:{video_id}:{resolution}")):
+            init_plain = init_dec
+
+    combined = dest_dir / f"combined_{video_id[:8]}_{resolution}.mp4"
+    with open(combined, "wb") as out:
+        with open(str(init_plain), "rb") as f:
+            out.write(f.read())
+        with open(str(seg_plain), "rb") as f:
+            out.write(f.read())
+    return combined
+
+
 def ensure_bucket_cors():
     global _BUCKET_CORS_DONE
     with _CORS_LOCK:
