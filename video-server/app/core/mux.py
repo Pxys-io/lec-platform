@@ -214,6 +214,20 @@ def mux_transcode(video_id: str):
         db.add(video)
         db.commit()
 
+        # Idempotent re-run: clear any previous resolution/segment records and R2 objects
+        old_res = db.exec(select(VideoResolution).where(VideoResolution.video_id == video.id)).all()
+        for r in old_res:
+            for s in db.exec(select(VideoSegment).where(VideoSegment.resolution_id == r.id)).all():
+                db.delete(s)
+            db.delete(r)
+        db.commit()
+        storage.delete_prefix(storage.video_prefix(video.id))
+        if video.mux_asset_id:
+            _delete_mux_asset(video.mux_asset_id)
+            video.mux_asset_id = None
+        db.add(video)
+        db.commit()
+
         upload_data = _create_direct_upload(video.original_filename, video.id)
         upload_url = upload_data["url"]
         mux_upload_id = upload_data["id"]

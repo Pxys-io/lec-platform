@@ -118,7 +118,7 @@ export default function Videos() {
     queryKey: ['transcode-jobs'],
     queryFn: () => api.get('/videos/jobs'),
     enabled: isInstructor,
-    refetchInterval: 5000, // Refresh every 5s to see progress
+    refetchInterval: 30000, // Refresh every 30s; transcoding takes minutes anyway
   })
 
   const [uploadProgress, setUploadProgress] = useState<number>(0)
@@ -127,7 +127,7 @@ export default function Videos() {
   const uploadMutation = useMutation({
     mutationFn: async () => {
       if (!uploadFile || !uploadTitle) throw new Error("Missing file or title");
-      const CHUNK_SIZE = 500 * 1024 * 1024; // 500MB chunks (local server, no network bottleneck)
+      const CHUNK_SIZE = 25 * 1024 * 1024; // 25MB chunks: smooth progress, no giant buffered requests
       const totalChunks = Math.ceil(uploadFile.size / CHUNK_SIZE);
       const storageKey = `lec_upload_${uploadFile.name}_${uploadFile.size}`;
       let uploadId = localStorage.getItem(storageKey);
@@ -477,7 +477,7 @@ export default function Videos() {
                       <h3 className="text-sm font-semibold mb-3">Available Qualities</h3>
                       <div className="space-y-2">
                         {videoDetail.resolutions?.map(res => (
-                          <div key={res.resolution} className="flex items-center justify-between p-2 rounded-lg border bg-surface text-sm">
+                          <div key={`${res.resolution}-${res.id}`} className="flex items-center justify-between p-2 rounded-lg border bg-surface text-sm">
                             <span className="font-medium">{res.resolution}</span>
                             <div className="flex items-center gap-4 text-xs text-gray-500">
                               <span>{res.width}x{res.height}</span>

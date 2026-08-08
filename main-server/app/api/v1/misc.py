@@ -1146,7 +1146,10 @@ async def proxy_video_server_content(
 
         r = await client.get(url, params=params, timeout=120)
         media_type = r.headers.get("content-type", "video/mp2t")
-        return Response(content=r.content, media_type=media_type, status_code=r.status_code)
+        resp = Response(content=r.content, media_type=media_type, status_code=r.status_code)
+        if r.status_code in (301, 302, 307, 308) and r.headers.get("location"):
+            resp.headers["Location"] = r.headers["location"]
+        return resp
 
 
 @videos_router.get("/{lesson_id}/raw")

@@ -27,6 +27,13 @@ class Settings(BaseSettings):
 
     VIDEO_SERVER_BASE_URL: str = "http://localhost:8001"
     MAIN_SERVER_URL: str = "http://localhost:8000"
+    PLAYLIST_PROXY_BASE_URL: str = ""
+
+    @property
+    def playlist_proxy_base(self) -> str:
+        if self.PLAYLIST_PROXY_BASE_URL:
+            return self.PLAYLIST_PROXY_BASE_URL.rstrip("/")
+        return self.MAIN_SERVER_URL.rstrip("/") + "/api/v1/videos/proxy"
 
     VIDEO_SERVER_DEBUG: bool = True
 

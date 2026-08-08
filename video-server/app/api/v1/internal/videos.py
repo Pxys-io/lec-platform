@@ -787,6 +787,7 @@ def get_playlist(
     ).all()
 
     base_url = settings.VIDEO_SERVER_BASE_URL
+    proxy_base = settings.playlist_proxy_base
     playlist_lines = [
         "#EXTM3U",
         "#EXT-X-VERSION:3",
@@ -795,7 +796,7 @@ def get_playlist(
     ]
 
     if video.is_encrypted and video.encryption_key_hex:
-        key_url = f"{base_url}/internal/videos/{video_id}/key"
+        key_url = f"{proxy_base}/internal/videos/{video_id}/key"
     else:
         key_url = None
 
@@ -875,7 +876,7 @@ def get_playlist(
                     playlist_lines.append(_key_line(f"break:{break_file_hash}"))
                 playlist_lines.append(f"#EXTINF:{video.watermark_break_duration:.3f},")
                 playlist_lines.append(
-                    f"{base_url}/internal/videos/watermark/{res.id}/{user_info_b64}.ts"
+                    f"{proxy_base}/internal/videos/watermark/{res.id}/{user_info_b64}.ts"
                 )
             prev_was_watermark = True
 
@@ -892,7 +893,7 @@ def get_playlist(
                 playlist_lines.append(_key_line(f"overlay:{overlay_file_hash}"))
             playlist_lines.append(f"#EXTINF:{seg.duration_seconds:.3f},")
             playlist_lines.append(
-                f"{base_url}/internal/videos/{video_id}/overlay/{seg.segment_hash}/{user_info_b64}.ts"
+                f"{proxy_base}/internal/videos/{video_id}/overlay/{seg.segment_hash}/{user_info_b64}.ts"
             )
         else:
             if key_url:
