@@ -599,6 +599,26 @@ def start_transcode(
     if existing_job:
         raise HTTPException(status_code=400, detail="Video already in queue or transcoding")
 
+    if settings.MUX_ENABLED:
+        import threading
+        from app.core.mux import mux_transcode
+        threading.Thread(target=mux_transcode, args=(video_id,), daemon=True).start()
+        video.status = "transcoding"
+        db.add(video)
+        db.commit()
+        return TranscodeJobResponse(
+            id=str(uuid.uuid4()),
+            video_id=video_id,
+            status="running",
+            progress=0.0,
+            resolutions_requested=resolutions,
+            resolutions_completed="",
+            fail_count=0,
+            priority=priority,
+            transcode_method="mux",
+            created_at=datetime.utcnow(),
+        )
+
     job = TranscodeJob(
         video_id=video_id,
         status="pending",
@@ -882,6 +902,19 @@ def get_playlist(
             queue.enqueue(job)
 
     prev_was_watermark = False
+
+    # fMP4 videos need their init segment declared before the first fragment
+    init_key = f"videos/{video_id}/{resolution}/init.mp4"
+    if (
+        video.storage_type == "r2"
+        and settings.R2_PUBLIC_DOMAIN
+        and storage.r2_enabled()
+        and storage.object_exists(init_key)
+    ):
+        if key_url:
+            playlist_lines.append(_key_line(f"init:{video_id}:{resolution}"))
+        playlist_lines.append(f'#EXT-X-MAP:URI="{storage.public_url(init_key)}"')
+
     for i, seg in enumerate(segments):
         is_marked = i in mark_indices and video.watermark_enabled
 

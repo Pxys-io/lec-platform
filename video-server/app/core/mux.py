@@ -152,13 +152,19 @@ def _parse_master_playlist(content: str, base_url: str) -> list[dict]:
     return variants
 
 
-def _parse_variant_playlist(content: str, base_url: str) -> list[dict]:
+def _parse_variant_playlist(content: str, base_url: str) -> tuple[list[dict], Optional[str]]:
     segments = []
+    map_uri = None
     lines = content.strip().split("\n")
     i = 0
     while i < len(lines):
         line = lines[i].strip()
-        if line.startswith("#EXTINF:"):
+        if line.startswith("#EXT-X-MAP:"):
+            m = re.search(r'URI="([^"]+)"', line)
+            if m:
+                uri = m.group(1)
+                map_uri = urljoin(base_url, uri) if not uri.startswith("http") else uri
+        elif line.startswith("#EXTINF:"):
             dur_match = re.match(r"#EXTINF:\s*([\d.]+)", line)
             duration = float(dur_match.group(1)) if dur_match else 60.0
             i += 1
@@ -167,7 +173,7 @@ def _parse_variant_playlist(content: str, base_url: str) -> list[dict]:
                 seg_url = urljoin(base_url, seg_uri) if not seg_uri.startswith("http") else seg_uri
                 segments.append({"uri": seg_url, "duration": duration, "filename": os.path.basename(seg_uri)})
         i += 1
-    return segments
+    return segments, map_uri
 
 
 def _compute_segment_hash(video_id: str, segment_num: int, resolution: str) -> str:
@@ -305,10 +311,28 @@ def mux_transcode(video_id: str):
             bitrate = variant["bitrate"]
 
             variant_content = _download_m3u8(variant["uri"])
-            segment_entries = _parse_variant_playlist(variant_content, f"https://stream.mux.com/")
+            segment_entries, map_uri = _parse_variant_playlist(variant_content, f"https://stream.mux.com/")
 
             res_path = temp_base / res_name
             res_path.mkdir(exist_ok=True)
+
+            # Download + upload the fMP4 init segment (EXT-X-MAP); required to decode fragments
+            if map_uri:
+                try:
+                    init_path = res_path / "init.mp4"
+                    _download_file(map_uri, init_path)
+                    init_upload = init_path
+                    if settings.VIDEO_ENCRYPTION_ENABLED and video.is_encrypted and video.encryption_key_hex:
+                        enc_init = res_path / "init.mp4.enc"
+                        if encrypt_segment_file(str(init_path), str(enc_init), video.encryption_key_hex, derive_segment_iv(f"init:{video.id}:{res_name}")):
+                            init_upload = enc_init
+                    storage.upload_file(
+                        storage.segment_key(video.id, res_name, "init.mp4"),
+                        str(init_upload),
+                        content_type="video/mp4",
+                    )
+                except Exception as e:
+                    print(f"Init segment upload error: {e}")
 
             res_record = VideoResolution(
                 video_id=video.id,
