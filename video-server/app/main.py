@@ -27,6 +27,8 @@ from app.core.config import settings
 @app.on_event("startup")
 def on_startup():
     init_db()
+    from app.core import storage as r2_storage
+    r2_storage.ensure_bucket_cors()
     if not settings.MUX_ENABLED:
         worker.start()
 

@@ -4,6 +4,7 @@ import os
 import re
 import time
 import hashlib
+import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -11,10 +12,13 @@ from urllib.parse import urljoin
 
 import httpx
 
+from sqlmodel import select
+
 from app.core.config import settings
 from app.core.database import SessionLocal
 from app.core.encryption import generate_encryption_keypair, encrypt_segment_file
 from app.models.video import Video, VideoResolution, VideoSegment
+from app.core import storage
 
 
 MUX_API_BASE = "https://api.mux.com"
@@ -198,6 +202,8 @@ def _delete_mux_upload(upload_id: str):
 
 def mux_transcode(video_id: str):
     db = SessionLocal()
+    asset_id = None
+    mux_upload_id = None
     try:
         video = db.get(Video, video_id)
         if not video:
@@ -262,8 +268,16 @@ def mux_transcode(video_id: str):
         if duration:
             video.duration_seconds = float(duration)
 
-        storage_base = Path(video.storage_path) / video.id
-        storage_base.mkdir(parents=True, exist_ok=True)
+        if settings.VIDEO_ENCRYPTION_ENABLED and not video.encryption_key_hex:
+            key_hex, iv_hex = generate_encryption_keypair()
+            video.encryption_key_hex = key_hex
+            video.encryption_iv_hex = iv_hex
+            video.is_encrypted = True
+            db.add(video)
+            db.commit()
+
+        temp_base = Path(settings.CACHE_STORAGE_PATH) / "mux" / video.id
+        temp_base.mkdir(parents=True, exist_ok=True)
 
         completed_resolutions = []
 
@@ -279,7 +293,7 @@ def mux_transcode(video_id: str):
             variant_content = _download_m3u8(variant["uri"])
             segment_entries = _parse_variant_playlist(variant_content, f"https://stream.mux.com/")
 
-            res_path = storage_base / res_name
+            res_path = temp_base / res_name
             res_path.mkdir(exist_ok=True)
 
             res_record = VideoResolution(
@@ -297,9 +311,10 @@ def mux_transcode(video_id: str):
             db.refresh(res_record)
 
             total_bytes = 0
+
             for i, seg_entry in enumerate(segment_entries):
-                seg_filename = seg_entry.get("filename", f"segment_{i:03d}.ts")
-                seg_path = res_path / seg_filename
+                mux_filename = seg_entry.get("filename", f"segment_{i:03d}.ts")
+                seg_path = res_path / mux_filename
 
                 try:
                     _download_file(seg_entry["uri"], seg_path)
@@ -309,56 +324,82 @@ def mux_transcode(video_id: str):
                 byte_size = seg_path.stat().st_size
                 total_bytes += byte_size
 
+                seg_hash = _compute_segment_hash(video.id, i, res_name)
+                hash_filename = f"{seg_hash}.ts"
+
+                upload_path = seg_path
+                if settings.VIDEO_ENCRYPTION_ENABLED and video.is_encrypted and video.encryption_key_hex:
+                    enc_path = res_path / f"{mux_filename}.enc"
+                    if encrypt_segment_file(str(seg_path), str(enc_path), video.encryption_key_hex, video.encryption_iv_hex or ""):
+                        upload_path = enc_path
+
+                r2_key = storage.segment_key(video.id, res_name, hash_filename)
+                storage.upload_file(r2_key, str(upload_path), content_type="video/mp2t")
+
                 seg = VideoSegment(
                     video_id=video.id,
                     resolution_id=res_record.id,
                     segment_number=i,
-                    segment_hash=_compute_segment_hash(video.id, i, res_name),
-                    filename=seg_filename,
+                    segment_hash=seg_hash,
+                    filename=hash_filename,
                     duration_seconds=seg_entry["duration"],
                     byte_size=byte_size,
-                    storage_path=str(seg_path),
+                    storage_type="r2",
+                    storage_path=r2_key,
                 )
                 db.add(seg)
 
             res_record.total_size_bytes = total_bytes
+            res_record.status = "ready"
             db.add(res_record)
             completed_resolutions.append(res_name)
             db.commit()
 
-        video.storage_path = str(storage_base)
-
-        if settings.VIDEO_ENCRYPTION_ENABLED and not video.is_encrypted:
-            from sqlmodel import select
-            key_hex, iv_hex = generate_encryption_keypair()
-            all_segs = db.exec(
-                select(VideoSegment)
-                .where(VideoSegment.video_id == video.id)
-                .order_by(VideoSegment.segment_number)
-            ).all()
-            ok = True
-            for seg in all_segs:
-                enc_path = seg.storage_path + ".enc"
-                if not encrypt_segment_file(seg.storage_path, enc_path, key_hex, iv_hex):
-                    ok = False
-                    break
-            if ok:
-                video.encryption_key_hex = key_hex
-                video.encryption_iv_hex = iv_hex
-                video.is_encrypted = True
-
-        video.status = "ready"
-        video.cdn_url = master_url
-        db.add(video)
-        db.commit()
-
-        _delete_mux_asset(asset_id)
-        _delete_mux_upload(mux_upload_id)
-    except Exception as e:
-        video = db.get(Video, video_id)
-        if video:
+        if not completed_resolutions:
             video.status = "error"
             db.add(video)
             db.commit()
+            return
+
+        video.storage_type = "r2"
+        video.storage_path = storage.video_prefix(video.id)
+        video.cdn_url = (
+            f"{settings.VIDEO_SERVER_BASE_URL}/internal/videos/{video.id}/manifest"
+        )
+
+        db.add(video)
+        db.commit()
+
+        for res in db.exec(select(VideoResolution).where(VideoResolution.video_id == video.id)).all():
+            res.playlist_url = None
+            db.add(res)
+
+        if video.original_path and os.path.exists(video.original_path):
+            ext = os.path.splitext(video.original_filename)[1] or os.path.splitext(video.original_path)[1]
+            storage.upload_file(
+                storage.original_key(video.id, ext),
+                video.original_path,
+                content_type="video/mp4",
+            )
+
+        video.status = "ready"
+        db.add(video)
+        db.commit()
+
+        shutil.rmtree(temp_base, ignore_errors=True)
+    except Exception as e:
+        print(f"Mux transcode error: {e}")
+        try:
+            video = db.get(Video, video_id)
+            if video:
+                video.status = "error"
+                db.add(video)
+                db.commit()
+        except Exception:
+            pass
     finally:
+        if asset_id:
+            _delete_mux_asset(asset_id)
+        if mux_upload_id:
+            _delete_mux_upload(mux_upload_id)
         db.close()

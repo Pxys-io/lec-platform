@@ -1181,6 +1181,7 @@ async def proxy_raw_video_student(
                 f"{settings.VIDEO_SERVER_INTERNAL_URL}/internal/videos/{lesson.video_id}/raw",
                 headers=headers,
                 timeout=None,
+                follow_redirects=True,
             ) as r:
                 if r.status_code != 200:
                     yield b"Video not found or access denied"
@@ -1916,6 +1917,7 @@ async def proxy_raw_video(
                 f"{settings.VIDEO_SERVER_INTERNAL_URL}/internal/videos/{video_id}/raw",
                 headers=headers,
                 timeout=None,
+                follow_redirects=True,
             ) as r:
                 if r.status_code != 200:
                     yield b"Video not found or access denied"

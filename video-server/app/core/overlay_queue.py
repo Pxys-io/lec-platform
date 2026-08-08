@@ -5,6 +5,7 @@ import random
 from pathlib import Path
 from queue import PriorityQueue
 from app.core.config import settings
+from app.core import storage
 
 _overlay_queue = None
 _queue_lock = threading.Lock()
@@ -85,9 +86,16 @@ class OverlayQueue:
             )
         vf = ",".join(drawtexts)
 
+        if job.seg.storage_type == "r2":
+            source = storage.localize(
+                job.seg.storage_path, job.cache_path.parent / "src"
+            )
+        else:
+            source = Path(job.seg.storage_path)
+
         cmd = [
             "ffmpeg",
-            "-i", job.seg.storage_path,
+            "-i", str(source),
             "-fflags", "+genpts",
             "-vf", vf,
             "-map", "0:v:0",
@@ -104,6 +112,13 @@ class OverlayQueue:
         if job.encryption_key_hex and job.encryption_iv_hex:
             from app.core.encryption import encrypt_file_inplace
             encrypt_file_inplace(str(job.cache_path), job.encryption_key_hex, job.encryption_iv_hex)
+
+        if job.cache_path.exists() and storage.r2_enabled():
+            try:
+                r2_key = storage.overlay_key(job.cache_path.stem)
+                storage.upload_file(r2_key, str(job.cache_path), content_type="video/mp2t")
+            except Exception as e:
+                print(f"R2 overlay upload error: {e}")
 
     def enqueue(self, job):
         key = str(job.cache_path)

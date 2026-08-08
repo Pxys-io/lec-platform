@@ -8,12 +8,13 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
 
     VIDEO_STORAGE_PATH: str = "./storage/videos"
-    VIDEO_STORAGE_TYPE: str = "local"
+    VIDEO_STORAGE_TYPE: str = "r2"
 
     R2_ACCOUNT_ID: str = ""
     R2_ACCESS_KEY_ID: str = ""
     R2_SECRET_ACCESS_KEY: str = ""
     R2_BUCKET: str = "lec-videos"
+    R2_PUBLIC_DOMAIN: str = ""
 
     S3_BUCKET: str = ""
     S3_REGION: str = "us-east-1"
@@ -36,7 +37,7 @@ class Settings(BaseSettings):
     CACHE_STORAGE_PATH: str = "./storage/cache"
     VIDEO_ENCRYPTION_ENABLED: bool = True
 
-    MUX_ENABLED: bool = False
+    MUX_ENABLED: bool = True
     MUX_TOKEN_ID: str = ""
     MUX_TOKEN_SECRET: str = ""
     MUX_VIDEO_QUALITY: str = "basic"

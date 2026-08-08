@@ -26,7 +26,9 @@ from app.schemas.video import (
 )
 
 from app.core.overlay_queue import get_overlay_queue, OverlayJob
-from app.core.cache import cache_get_or_compute, cache_set, start_cache_cleanup_worker
+from app.core.cache import cache_get_or_compute, cache_set, cache_get, start_cache_cleanup_worker
+from app.core import storage
+from fastapi.responses import RedirectResponse
 
 router = APIRouter(prefix="/internal/videos", tags=["internal"])
 
@@ -187,6 +189,14 @@ def complete_upload(
 def compute_segment_hash(video_id: str, segment_num: int, resolution: str) -> str:
     data = f"{video_id}-{segment_num}-{resolution}-{datetime.utcnow().isoformat()}"
     return hashlib.sha256(data.encode()).hexdigest()[:12]
+
+
+def segment_public_url(video_id: str, seg) -> str:
+    """URL the HLS player fetches this segment from: R2 directly when possible."""
+    if seg.storage_type == "r2" and settings.R2_PUBLIC_DOMAIN:
+        return storage.public_url(seg.storage_path)
+    base_url = settings.VIDEO_SERVER_BASE_URL
+    return f"{base_url}/internal/videos/{video_id}/segment/{seg.segment_hash}"
 
 
 def ensure_storage_dirs():
@@ -537,6 +547,17 @@ def delete_video(
             db.delete(seg)
         db.delete(res)
 
+    if video.storage_type == "r2":
+        storage.delete_prefix(storage.video_prefix(video_id))
+        ext = os.path.splitext(video.original_filename)[1] or os.path.splitext(video.original_path)[1]
+        storage.delete_object(storage.original_key(video_id, ext))
+
+    if video.original_path and os.path.exists(video.original_path):
+        try:
+            os.remove(video.original_path)
+        except:
+            pass
+
     db.delete(video)
     db.commit()
 
@@ -717,6 +738,12 @@ def get_raw_video(
     
     if video.status == "blocked":
         raise HTTPException(status_code=403, detail="Video is blocked")
+
+    if video.storage_type == "r2" and settings.R2_PUBLIC_DOMAIN:
+        ext = os.path.splitext(video.original_filename)[1] or os.path.splitext(video.original_path)[1]
+        key = storage.original_key(video.id, ext)
+        if storage.object_exists(key):
+            return RedirectResponse(storage.public_url(key), status_code=307)
         
     if not os.path.exists(video.original_path):
         raise HTTPException(status_code=404, detail="Original file not found")
@@ -853,9 +880,7 @@ def get_playlist(
             )
         else:
             playlist_lines.append(f"#EXTINF:{seg.duration_seconds:.3f},")
-            playlist_lines.append(
-                f"{base_url}/internal/videos/{video_id}/segment/{seg.segment_hash}"
-            )
+            playlist_lines.append(segment_public_url(video_id, seg))
 
     playlist_lines.append("#EXT-X-ENDLIST")
 
@@ -894,18 +919,21 @@ def get_overlay_segment(
     res = db.get(VideoResolution, seg.resolution_id)
 
     cache_key = f"overlay_{segment_hash}_{info_b64}"
-    cached = cache_get(db, cache_key, "overlay")
-    if cached and cached.file_path and os.path.exists(cached.file_path):
-        from fastapi.responses import FileResponse
-        return FileResponse(cached.file_path, media_type="video/mp2t")
+    file_hash = hashlib.md5(cache_key.encode()).hexdigest()
+    r2_key = storage.overlay_key(file_hash)
+
+    if settings.R2_PUBLIC_DOMAIN and storage.r2_enabled():
+        if storage.object_exists(r2_key):
+            return RedirectResponse(storage.public_url(r2_key), status_code=307)
 
     temp_dir = Path(settings.CACHE_STORAGE_PATH) / "overlays"
     temp_dir.mkdir(parents=True, exist_ok=True)
 
-    file_hash = hashlib.md5(cache_key.encode()).hexdigest()
     overlay_file = temp_dir / f"{file_hash}.ts"
+    generated_now = False
 
     if not overlay_file.exists():
+        generated_now = True
         import random
         rng = random.Random(segment_hash + info_b64)
         count = max(1, video.watermark_overlay_count)
@@ -923,9 +951,14 @@ def get_overlay_segment(
             )
         vf = ",".join(drawtexts)
 
+        if seg.storage_type == "r2":
+            source = storage.localize(seg.storage_path, temp_dir / "src")
+        else:
+            source = Path(seg.storage_path)
+
         cmd = [
             "ffmpeg",
-            "-i", seg.storage_path,
+            "-i", str(source),
             "-fflags", "+genpts",
             "-vf", vf,
             "-map", "0:v:0",
@@ -939,13 +972,23 @@ def get_overlay_segment(
         if result.returncode != 0:
             print(f"Overlay ffmpeg error: {result.stderr[-500:]}")
 
-    # Re-encrypt if the video uses encryption
-    if video and video.is_encrypted and video.encryption_key_hex and video.encryption_iv_hex:
+    if not overlay_file.exists():
+        raise HTTPException(status_code=500, detail="Overlay generation failed")
+
+    if generated_now and video.is_encrypted and video.encryption_key_hex and video.encryption_iv_hex:
         from app.core.encryption import encrypt_file_inplace
         encrypt_file_inplace(str(overlay_file), video.encryption_key_hex, video.encryption_iv_hex)
 
-    ttl = settings.WATERMARK_INSERT_CACHE_TTL
-    cache_set(db, cache_key, "overlay", ttl, file_path=str(overlay_file))
+    if storage.r2_enabled():
+        try:
+            storage.upload_file(r2_key, str(overlay_file), content_type="video/mp2t")
+        except Exception as e:
+            print(f"R2 overlay upload error: {e}")
+
+    cache_set(db, cache_key, "overlay", settings.WATERMARK_INSERT_CACHE_TTL, file_path=str(overlay_file))
+
+    if settings.R2_PUBLIC_DOMAIN and storage.r2_enabled():
+        return RedirectResponse(storage.public_url(r2_key), status_code=307)
 
     from fastapi.responses import FileResponse
     return FileResponse(str(overlay_file), media_type="video/mp2t")
@@ -974,18 +1017,25 @@ def get_dynamic_watermark_segment(
 
     user_name = user_info.split("|")[0] if "|" in user_info else user_info
     cache_key = f"break_{resolution_id}_{info_b64}_{break_dur}"
+    file_hash = hashlib.md5(cache_key.encode()).hexdigest()
+    r2_key = storage.break_screen_key(file_hash)
+
+    if settings.R2_PUBLIC_DOMAIN and storage.r2_enabled():
+        if storage.object_exists(r2_key):
+            return RedirectResponse(storage.public_url(r2_key), status_code=307)
 
     cached = cache_get(db, cache_key, "break_screen")
     if cached and cached.file_path and os.path.exists(cached.file_path):
         from fastapi.responses import FileResponse
         return FileResponse(cached.file_path, media_type="video/mp2t")
 
-    file_hash = hashlib.md5(cache_key.encode()).hexdigest()
     break_dir = Path(settings.CACHE_STORAGE_PATH) / "break_screens"
     break_dir.mkdir(parents=True, exist_ok=True)
     break_file = break_dir / f"{file_hash}.ts"
+    generated_now = False
 
     if not break_file.exists():
+        generated_now = True
         has_espeak = shutil.which("espeak") is not None
 
         tts_wav = None
@@ -1055,11 +1105,20 @@ def get_dynamic_watermark_segment(
                 _su.copy(fallback, break_file)
 
     # Re-encrypt break screen if video is encrypted
-    if video and video.is_encrypted and video.encryption_key_hex and video.encryption_iv_hex:
+    if generated_now and video and video.is_encrypted and video.encryption_key_hex and video.encryption_iv_hex:
         from app.core.encryption import encrypt_file_inplace
         encrypt_file_inplace(str(break_file), video.encryption_key_hex, video.encryption_iv_hex)
 
+    if storage.r2_enabled() and break_file.exists():
+        try:
+            storage.upload_file(r2_key, str(break_file), content_type="video/mp2t")
+        except Exception as e:
+            print(f"R2 break screen upload error: {e}")
+
     cache_set(db, cache_key, "break_screen", settings.WATERMARK_INSERT_CACHE_TTL, file_path=str(break_file))
+
+    if settings.R2_PUBLIC_DOMAIN and storage.r2_enabled():
+        return RedirectResponse(storage.public_url(r2_key), status_code=307)
 
     from fastapi.responses import FileResponse
     return FileResponse(str(break_file), media_type="video/mp2t")
@@ -1088,6 +1147,34 @@ def get_segment(
 
     if not seg:
         raise HTTPException(status_code=404, detail="Segment not found")
+
+    if seg.storage_type == "r2" and settings.R2_PUBLIC_DOMAIN:
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse(
+            storage.public_url(seg.storage_path), status_code=307
+        )
+
+    if seg.storage_type == "r2":
+        key = seg.storage_path
+        video = db.get(Video, video_id)
+        if video and video.is_encrypted:
+            key = seg.storage_path
+        from fastapi.responses import StreamingResponse
+
+        def _stream_r2():
+            resp = storage.get_r2_client().get_object(Bucket=settings.R2_BUCKET, Key=key)
+            body = resp["Body"]
+            while True:
+                chunk = body.read(1024 * 256)
+                if not chunk:
+                    break
+                yield chunk
+
+        return StreamingResponse(
+            _stream_r2(),
+            media_type="video/mp2t",
+            headers={"Content-Disposition": f"inline; filename={seg.filename}"},
+        )
 
     seg_path = seg.storage_path
     if not seg_path or not os.path.exists(seg_path):
