@@ -1,12 +1,19 @@
 import os
 import secrets
 import subprocess
+import hashlib
 
 
 def generate_encryption_keypair():
     key_hex = secrets.token_hex(16)
     iv_hex = secrets.token_hex(16)
     return key_hex, iv_hex
+
+
+def derive_segment_iv(seed: str) -> str:
+    """Deterministic per-segment IV from segment identity (not playlist position),
+    so inserted/overlaid watermark segments never shift the IV of other segments."""
+    return hashlib.sha256(seed.encode()).hexdigest()[:32]
 
 
 def encrypt_segment_file(input_path: str, output_path: str, key_hex: str, iv_hex: str) -> bool:

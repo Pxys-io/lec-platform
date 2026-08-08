@@ -109,9 +109,13 @@ class OverlayQueue:
         if result.returncode != 0:
             print(f"Overlay ffmpeg error: {result.stderr[-500:]}")
 
-        if job.encryption_key_hex and job.encryption_iv_hex:
-            from app.core.encryption import encrypt_file_inplace
-            encrypt_file_inplace(str(job.cache_path), job.encryption_key_hex, job.encryption_iv_hex)
+        if job.encryption_key_hex:
+            from app.core.encryption import encrypt_file_inplace, derive_segment_iv
+            encrypt_file_inplace(
+                str(job.cache_path),
+                job.encryption_key_hex,
+                derive_segment_iv(f"overlay:{job.cache_path.stem}"),
+            )
 
         if job.cache_path.exists() and storage.r2_enabled():
             try:

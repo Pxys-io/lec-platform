@@ -16,7 +16,7 @@ from sqlmodel import select
 
 from app.core.config import settings
 from app.core.database import SessionLocal
-from app.core.encryption import generate_encryption_keypair, encrypt_segment_file
+from app.core.encryption import generate_encryption_keypair, encrypt_segment_file, derive_segment_iv
 from app.models.video import Video, VideoResolution, VideoSegment
 from app.core import storage
 
@@ -330,7 +330,7 @@ def mux_transcode(video_id: str):
                 upload_path = seg_path
                 if settings.VIDEO_ENCRYPTION_ENABLED and video.is_encrypted and video.encryption_key_hex:
                     enc_path = res_path / f"{mux_filename}.enc"
-                    if encrypt_segment_file(str(seg_path), str(enc_path), video.encryption_key_hex, video.encryption_iv_hex or ""):
+                    if encrypt_segment_file(str(seg_path), str(enc_path), video.encryption_key_hex, derive_segment_iv(f"seg:{seg_hash}")):
                         upload_path = enc_path
 
                 r2_key = storage.segment_key(video.id, res_name, hash_filename)

@@ -794,9 +794,15 @@ def get_playlist(
         f"#EXT-X-MEDIA-SEQUENCE:0",
     ]
 
-    if video.is_encrypted and video.encryption_key_hex and video.encryption_iv_hex:
+    if video.is_encrypted and video.encryption_key_hex:
         key_url = f"{base_url}/internal/videos/{video_id}/key"
-        playlist_lines.append(f'#EXT-X-KEY:METHOD=AES-128,URI="{key_url}",IV=0x{video.encryption_iv_hex}')
+    else:
+        key_url = None
+
+    from app.core.encryption import derive_segment_iv
+
+    def _key_line(seed: str) -> str:
+        return f'#EXT-X-KEY:METHOD=AES-128,URI="{key_url}",IV=0x{derive_segment_iv(seed)}'
 
     import base64
     import random
@@ -861,7 +867,12 @@ def get_playlist(
         if is_marked and video.watermark_mode == "insert":
             if i > 0:
                 playlist_lines.append("#EXT-X-DISCONTINUITY")
+            break_file_hash = hashlib.md5(
+                f"break_{res.id}_{user_info_b64}_{video.watermark_break_duration}".encode()
+            ).hexdigest()
             for _ in range(video.watermark_insert_repeat):
+                if key_url:
+                    playlist_lines.append(_key_line(f"break:{break_file_hash}"))
                 playlist_lines.append(f"#EXTINF:{video.watermark_break_duration:.3f},")
                 playlist_lines.append(
                     f"{base_url}/internal/videos/watermark/{res.id}/{user_info_b64}.ts"
@@ -873,12 +884,19 @@ def get_playlist(
             prev_was_watermark = False
 
         if is_marked and video.watermark_mode == "overlay":
+            overlay_file_hash = hashlib.md5(
+                f"overlay_{seg.segment_hash}_{user_info_b64}".encode()
+            ).hexdigest()
             playlist_lines.append("#EXT-X-DISCONTINUITY")
+            if key_url:
+                playlist_lines.append(_key_line(f"overlay:{overlay_file_hash}"))
             playlist_lines.append(f"#EXTINF:{seg.duration_seconds:.3f},")
             playlist_lines.append(
                 f"{base_url}/internal/videos/{video_id}/overlay/{seg.segment_hash}/{user_info_b64}.ts"
             )
         else:
+            if key_url:
+                playlist_lines.append(_key_line(f"seg:{seg.segment_hash}"))
             playlist_lines.append(f"#EXTINF:{seg.duration_seconds:.3f},")
             playlist_lines.append(segment_public_url(video_id, seg))
 
@@ -975,9 +993,9 @@ def get_overlay_segment(
     if not overlay_file.exists():
         raise HTTPException(status_code=500, detail="Overlay generation failed")
 
-    if generated_now and video.is_encrypted and video.encryption_key_hex and video.encryption_iv_hex:
-        from app.core.encryption import encrypt_file_inplace
-        encrypt_file_inplace(str(overlay_file), video.encryption_key_hex, video.encryption_iv_hex)
+    if generated_now and video.is_encrypted and video.encryption_key_hex:
+        from app.core.encryption import encrypt_file_inplace, derive_segment_iv
+        encrypt_file_inplace(str(overlay_file), video.encryption_key_hex, derive_segment_iv(f"overlay:{file_hash}"))
 
     if storage.r2_enabled():
         try:
@@ -1105,9 +1123,9 @@ def get_dynamic_watermark_segment(
                 _su.copy(fallback, break_file)
 
     # Re-encrypt break screen if video is encrypted
-    if generated_now and video and video.is_encrypted and video.encryption_key_hex and video.encryption_iv_hex:
-        from app.core.encryption import encrypt_file_inplace
-        encrypt_file_inplace(str(break_file), video.encryption_key_hex, video.encryption_iv_hex)
+    if generated_now and video and video.is_encrypted and video.encryption_key_hex:
+        from app.core.encryption import encrypt_file_inplace, derive_segment_iv
+        encrypt_file_inplace(str(break_file), video.encryption_key_hex, derive_segment_iv(f"break:{file_hash}"))
 
     if storage.r2_enabled() and break_file.exists():
         try:
