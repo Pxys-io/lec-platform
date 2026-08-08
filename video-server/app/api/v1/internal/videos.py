@@ -44,6 +44,11 @@ def _compute_watermark_positions(video, segments, user_email):
     import json as _json
     total_segments = len(segments)
     num_marks = min(total_segments, video.watermark_segments)
+    # Cap marks so the video doesn't drown in break screens:
+    # require at least (break_duration * repeat) of content per inserted break.
+    total_duration = sum(s.duration_seconds for s in segments)
+    spacing = max(1, video.watermark_break_duration * video.watermark_insert_repeat)
+    num_marks = min(num_marks, int(total_duration // spacing))
     if num_marks <= 0:
         return {"data": _json.dumps([])}
     if num_marks >= total_segments:
@@ -811,15 +816,30 @@ def get_playlist(
     user_info = f"{user_email or 'Unknown'}|{user_phone or 'Unknown'}"
     user_info_b64 = base64.b64encode(user_info.encode()).decode()
 
-    # Cache watermark positions with TTL (anti-abuse)
+    # Cache watermark positions with TTL (anti-abuse).
+    # Include watermark settings in the key so config changes take effect immediately.
     import json as _json
-    pos_cache_key = f"{video.id}-{user_email or 'anon'}-{res.id}"
+    pos_cache_key = (
+        f"{video.id}-{user_email or 'anon'}-{res.id}-"
+        f"{video.watermark_segments}-{video.watermark_break_duration}-{video.watermark_insert_repeat}"
+    )
     pos_entry = cache_get_or_compute(
         db, pos_cache_key, "watermark_position",
         settings.WATERMARK_POSITION_CACHE_TTL,
         lambda: _compute_watermark_positions(video, segments, user_email),
     )
     mark_indices = set(_json.loads(pos_entry.data))
+
+    # Effective break duration: never longer than break_duration, and scaled so
+    # the breaks don't dominate short videos.
+    total_duration = sum(s.duration_seconds for s in segments)
+    if mark_indices and video.watermark_mode == "insert":
+        eff_break = min(
+            video.watermark_break_duration,
+            max(1, int(total_duration // (len(mark_indices) + 1))),
+        )
+    else:
+        eff_break = video.watermark_break_duration
 
     if settings.VIDEO_SERVER_DEBUG:
         cum_time = 0.0
@@ -828,7 +848,7 @@ def get_playlist(
         for i, seg in enumerate(segments):
             if i in mark_indices and video.watermark_enabled:
                 if mode == "insert":
-                    dur = video.watermark_break_duration * video.watermark_insert_repeat
+                    dur = eff_break * video.watermark_insert_repeat
                     mark_entries.append(f"insert:{cum_time:.3f}+{dur:.3f}s")
                 else:
                     end = cum_time + seg.duration_seconds
@@ -869,14 +889,14 @@ def get_playlist(
             if i > 0:
                 playlist_lines.append("#EXT-X-DISCONTINUITY")
             break_file_hash = hashlib.md5(
-                f"break_{res.id}_{user_info_b64}_{video.watermark_break_duration}".encode()
+                f"break_{res.id}_{user_info_b64}_{eff_break}".encode()
             ).hexdigest()
             for _ in range(video.watermark_insert_repeat):
                 if key_url:
                     playlist_lines.append(_key_line(f"break:{break_file_hash}"))
-                playlist_lines.append(f"#EXTINF:{video.watermark_break_duration:.3f},")
+                playlist_lines.append(f"#EXTINF:{eff_break:.3f},")
                 playlist_lines.append(
-                    f"{proxy_base}/internal/videos/watermark/{res.id}/{user_info_b64}.ts"
+                    f"{proxy_base}/internal/videos/watermark/{res.id}/{user_info_b64}/{eff_break}.ts"
                 )
             prev_was_watermark = True
 
@@ -1013,10 +1033,11 @@ def get_overlay_segment(
     return FileResponse(str(overlay_file), media_type="video/mp2t")
 
 
-@router.get("/watermark/{resolution_id}/{info_b64}.ts")
+@router.get("/watermark/{resolution_id}/{info_b64}/{break_dur}.ts")
 def get_dynamic_watermark_segment(
     resolution_id: str,
     info_b64: str,
+    break_dur: int,
     db: Session = Depends(get_db),
 ):
     import base64
@@ -1032,7 +1053,8 @@ def get_dynamic_watermark_segment(
         raise HTTPException(status_code=404, detail="Resolution not found")
 
     video = db.get(Video, res.video_id)
-    break_dur = video.watermark_break_duration if video else settings.WATERMARK_BREAK_DURATION
+    if not break_dur or break_dur <= 0:
+        break_dur = video.watermark_break_duration if video else settings.WATERMARK_BREAK_DURATION
 
     user_name = user_info.split("|")[0] if "|" in user_info else user_info
     cache_key = f"break_{resolution_id}_{info_b64}_{break_dur}"
