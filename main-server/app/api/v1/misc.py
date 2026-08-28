@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timedelta
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query, File, UploadFile, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Query, File, UploadFile, Request, Header
 from sqlmodel import Session, select, func
 
 from app.core.database import get_db
