@@ -7,6 +7,12 @@ interface Code {
   access_duration: number | null; max_uses: number | null; current_uses: number
   is_active: boolean; created_at: string
 }
+function expiryText(days: number | null): string {
+  if (days == null) return 'Never expires'
+  if (days === 1) return '1 day'
+  if (days >= 365) return `${Math.round(days / 365)} year${days >= 730 ? 's' : ''}`
+  return `${days} days`
+}
 interface Course { id: string; title: string }
 
 export default function Codes() {
@@ -66,10 +72,16 @@ export default function Codes() {
               <tr key={c.id}>
                 <td><b className="mono">{c.code}</b></td>
                 <td>{courses.find((x) => x.id === c.course_id)?.title || c.course_id?.slice(0, 8) || '—'}</td>
-                <td>{c.access_type}</td>
-                <td>{c.current_uses}/{c.max_uses ?? '∞'}</td>
+                <td>
+                  <span className={`badge ${c.access_type === 'full' ? 'b-green' : 'b-blue'}`}>{c.access_type === 'full' ? 'Full access' : 'Trial'}</span>
+                  <div className="sub" style={{ margin: 0 }}>{expiryText(c.access_duration)}</div>
+                </td>
+                <td>
+                  {c.current_uses} of {c.max_uses ?? '∞'} used
+                  {c.max_uses != null && c.current_uses >= c.max_uses && <div><span className="badge b-red">Used up</span></div>}
+                </td>
                 <td>{c.is_active ? <span className="badge b-green">yes</span> : <span className="badge b-gray">no</span>}</td>
-                <td><button className="btn danger small" onClick={async () => { await api.del(`/codes/${c.id}`); load() }}>Deactivate</button></td>
+                <td><button className="btn danger small" disabled={!c.is_active} onClick={async () => { await api.del(`/codes/${c.id}`); load() }}>{c.is_active ? 'Deactivate' : 'Inactive'}</button></td>
               </tr>
             ))}
             {codes.length === 0 && <tr><td colSpan={6} className="sub" style={{ textAlign: 'center' }}>No codes</td></tr>}

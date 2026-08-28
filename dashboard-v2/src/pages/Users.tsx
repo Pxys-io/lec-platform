@@ -5,6 +5,19 @@ import { useToast } from '../toast'
 interface U {
   id: string; email: string; phone: string | null; role: string
   banned_until: string | null; last_login: string | null; first_name?: string; last_name?: string
+  device_limit?: number
+}
+function timeAgo(iso: string | null): string {
+  if (!iso) return 'Never'
+  const d = new Date(iso + (iso.endsWith('Z') ? '' : 'Z'))
+  const diff = (Date.now() - d.getTime()) / 1000
+  if (diff < 60) return 'just now'
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
+  return d.toLocaleDateString()
+}
+const ROLE_LABEL: Record<string, string> = {
+  super_admin: 'Super Admin', admin: 'Admin', instructor: 'Instructor', student: 'Student',
 }
 interface Dev { device_id: string; device_type: string; last_login: string }
 
@@ -47,9 +60,9 @@ export default function Users() {
             {filtered.map((u) => (
               <tr key={u.id}>
                 <td><b>{u.email}</b><div className="sub" style={{ margin: 0 }}>{[u.first_name, u.last_name].filter(Boolean).join(' ') || '—'}{u.phone ? ` · ${u.phone}` : ''}</div></td>
-                <td><span className={`badge ${roleBadge(u.role)}`}>{u.role}</span></td>
+                <td><span className={`badge ${roleBadge(u.role)}`}>{ROLE_LABEL[u.role] || u.role}</span></td>
                 <td>{u.banned_until && new Date(u.banned_until) > new Date() ? <span className="badge b-red">banned</span> : <span className="badge b-green">active</span>}</td>
-                <td className="mono">{u.last_login ? new Date(u.last_login).toLocaleDateString() : '—'}</td>
+                <td>{timeAgo(u.last_login)}</td>
                 <td style={{ textAlign: 'right' }}>
                   <button className="btn ghost small" onClick={() => openUser(u)}>Manage</button>
                 </td>
@@ -62,21 +75,24 @@ export default function Users() {
       {sel && (
         <div className="modal-bg" onClick={(e) => e.target === e.currentTarget && setSel(null)}>
           <div className="modal" data-testid="user-modal">
-            <h3>{sel.email}</h3>
-            <p className="sub" style={{ marginBottom: 16 }}>Role: {sel.role} · ID {sel.id.slice(0, 8)}</p>
+            <h3>{[sel.first_name, sel.last_name].filter(Boolean).join(' ') || sel.email}</h3>
+            <p className="sub" style={{ marginBottom: 16 }}>
+              {sel.email} · {ROLE_LABEL[sel.role] || sel.role}
+              {sel.device_limit != null && <> · up to {sel.device_limit > 999 ? 'unlimited' : sel.device_limit} device{sel.device_limit === 1 ? '' : 's'}</>}
+            </p>
             <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
               {sel.banned_until && new Date(sel.banned_until) > new Date() ? (
-                <button className="btn small" onClick={() => act(() => api.post(`/users/${sel.id}/unban`), 'Unbanned')}>Unban</button>
+                <button className="btn small" onClick={() => act(() => api.post(`/users/${sel.id}/unban`), 'Unbanned')}>🚫 Lift ban</button>
               ) : (
                 <>
                   <select defaultValue="7" style={{ width: 'auto' }} data-testid="ban-days">
                     <option value="1">1 day</option><option value="7">7 days</option>
                     <option value="30">30 days</option><option value="365">1 year</option>
                   </select>
-                  <button className="btn danger small" onClick={() => {
-                    const d = document.querySelector('[data-testid="ban-days"] select, select[data-testid="ban-days"]') as HTMLSelectElement
+                  <button className="btn danger small" data-testid="btn-ban" onClick={() => {
+                    const d = document.querySelector('select[data-testid="ban-days"]') as HTMLSelectElement
                     act(() => api.post(`/users/${sel.id}/ban?ban_duration_days=${d?.value || 7}`), `Banned ${d?.value || 7}d`)
-                  }}>Ban</button>
+                  }}>🚫 Ban</button>
                 </>
               )}
               <button className="btn ghost small" onClick={() => act(() => api.post(`/users/${sel.id}/devices/reset`), 'Devices reset')}>Reset devices</button>
@@ -84,16 +100,19 @@ export default function Users() {
                 value={sel.role} style={{ width: 'auto' }} data-testid="role-select"
                 onChange={(e) => act(() => api.put(`/users/${sel.id}`, { role: e.target.value }), `Role -> ${e.target.value}`)}
               >
-                <option value="student">student</option>
-                <option value="instructor">instructor</option>
-                <option value="admin">admin</option>
-                <option value="super_admin">super_admin</option>
+                <option value="student">🎓 Student</option>
+                <option value="instructor">📎 Instructor</option>
+                <option value="admin">🛡 Admin</option>
+                <option value="super_admin">👑 Super Admin</option>
               </select>
             </div>
             <h2>Devices ({devices.length})</h2>
             {devices.map((d) => (
               <div className="job" key={d.device_id}>
-                <div className="grow"><b className="mono">{d.device_id.slice(0, 14)}…</b><div className="sub" style={{ margin: 0 }}>{d.device_type} · {d.last_login ? new Date(d.last_login).toLocaleString() : 'never'}</div></div>
+                <div className="grow">
+                  <b>{d.device_type === 'mobile' ? '📱 Phone / tablet' : '💻 Desktop'}</b>
+                  <div className="sub" style={{ margin: 0 }}>Last active {timeAgo(d.last_login)} · ID {d.device_id.slice(0, 8)}…</div>
+                </div>
               </div>
             ))}
             {devices.length === 0 && <p className="sub">No devices</p>}

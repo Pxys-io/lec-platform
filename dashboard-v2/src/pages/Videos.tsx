@@ -13,8 +13,24 @@ interface Video {
   duration_seconds: number | null; width: number | null; height: number | null
   resolutions?: Res[]
 }
-interface Job { id: string; video_id: string; status: string; progress: number; fail_count: number; transcode_method?: string }
+interface Job { id: string; video_id: string; status: string; progress: number; fail_count: number; transcode_method?: string; created_at?: string }
 
+function humanDur(sec: number | null): string {
+  if (sec == null) return '—'
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = Math.round(sec % 60)
+  if (h > 0) return `${h}h ${m}m`
+  if (m > 0) return `${m}m ${String(s).padStart(2, '0')}s`
+  return `${s}s`
+}
+function timeAgo(iso: string | null): string {
+  if (!iso) return ''
+  const d = new Date(iso + (iso.endsWith('Z') ? '' : 'Z'))
+  const diff = (Date.now() - d.getTime()) / 1000
+  if (diff < 60) return 'just now'
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
+  return d.toLocaleDateString()
+}
 const emptyWm = {
   watermark_enabled: true, watermark_mode: 'insert', watermark_segments: 10,
   watermark_text: '', watermark_color: '#FFFFFF', watermark_font_size: 20,
@@ -117,13 +133,17 @@ export default function Videos() {
             <div className="job" key={j.id}>
               <div className="grow">
                 <div className="row" style={{ marginBottom: 6 }}>
-                  <span className="mono">{j.id.slice(0, 8)}</span>
-                  <span className={`badge ${j.status === 'running' ? 'b-blue' : 'b-yellow'}`}>{j.status}</span>
-                  {j.transcode_method && <span className="chip b-gray">{j.transcode_method.toUpperCase()}</span>}
+                  <b>{videos.find((v) => v.id === j.video_id)?.title || 'Video ' + j.video_id.slice(0, 8)}</b>
+                  <span className={`badge ${j.status === 'running' ? 'b-blue' : 'b-yellow'}`}>
+                    {j.status === 'running' ? 'Transcoding…' : 'Waiting in queue'}
+                  </span>
+                  {j.transcode_method && <span className="chip b-gray">{j.transcode_method === 'mux' ? '☁ Mux cloud' : '⚙ Server ffmpeg'}</span>}
+                  {j.fail_count > 0 && <span className="badge b-red">{j.fail_count} failed attempts</span>}
+                  {j.created_at && <span className="sub" style={{ margin: 0 }}>{timeAgo(j.created_at)}</span>}
                 </div>
                 <div className="progress"><div style={{ width: `${j.progress}%` }} /></div>
               </div>
-              <button className="btn ghost small danger" onClick={() => act(() => api.post(`/videos/jobs/${j.id}/kill`), 'Job killed')}>Kill</button>
+              <button className="btn ghost small danger" onClick={() => act(() => api.post(`/videos/jobs/${j.id}/kill`), 'Job killed')}>Stop</button>
             </div>
           ))}
         </div>
@@ -132,18 +152,33 @@ export default function Videos() {
       <input placeholder="Search by title or ID…" value={q} onChange={(e) => setQ(e.target.value)} style={{ maxWidth: 380, marginBottom: 14 }} data-testid="videos-search" />
 
       {loading ? <p className="sub">Loading…</p> : (
+        Object.entries(
+          filtered.reduce<Record<string, Video[]>>((acc, v) => {
+            const f = v.folder || 'General'
+            ;(acc[f] = acc[f] || []).push(v)
+            return acc
+          }, {}),
+        ).sort(([a], [b]) => a.localeCompare(b)).map(([folder, vids]) => (
+        <div key={folder} style={{ marginBottom: 26 }}>
+          <h2 style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+            <span style={{ width: 8, height: 8, borderRadius: 99, background: 'var(--primary)', display: 'inline-block' }} />
+            {folder} <span className="sub" style={{ margin: 0 }}>({vids.length})</span>
+          </h2>
         <div className="card" style={{ padding: 0 }}>
           <table>
-            <thead><tr><th>Title</th><th>Folder</th><th>Status</th><th>Mode</th><th>WM</th><th>Duration</th><th style={{ textAlign: 'right' }}>Actions</th></tr></thead>
+            <thead><tr><th>Title</th><th>Status</th><th>Mode</th><th>WM</th><th>Duration</th><th style={{ textAlign: 'right' }}>Actions</th></tr></thead>
             <tbody data-testid="videos-table">
-              {filtered.map((v) => (
+              {vids.map((v) => (
                 <tr key={v.id}>
                   <td><b>{v.title || 'Untitled'}</b><div className="mono">{v.id.slice(0, 8)}</div></td>
-                  <td>{v.folder}</td>
-                  <td><span className={`badge ${badge(v.status)}`}>{v.status}</span></td>
+                  <td><span className={`badge ${badge(v.status)}`}>
+                      {v.status === 'ready' ? 'Ready' : v.status === 'transcoding' ? 'Transcoding…' : v.status === 'pending' ? 'Queued' : v.status === 'blocked' ? 'Blocked' : 'Failed'}
+                    </span></td>
                   <td>{v.streaming_mode === 'direct' ? <span className="badge b-gray">DIRECT</span> : <span className="badge b-blue">HLS</span>}</td>
-                  <td>{v.watermark_enabled ? <span className="badge b-green">{v.watermark_mode}</span> : <span className="badge b-gray">off</span>}</td>
-                  <td>{v.duration_seconds ? `${Math.floor(v.duration_seconds / 60)}:${String(Math.floor(v.duration_seconds % 60)).padStart(2, '0')}` : '—'}</td>
+                  <td>{v.watermark_enabled
+                      ? <span className="badge b-green">{v.watermark_mode === 'insert' ? `Breaks ×${v.watermark_segments}` : `Overlay ×${v.watermark_overlay_count}`}</span>
+                      : <span className="badge b-gray">Off</span>}</td>
+                  <td>{humanDur(v.duration_seconds)}</td>
                   <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                     <button className="btn ghost small" onClick={() => setEdit(v)}>Edit</button>{' '}
                     {v.status !== 'transcoding' && v.status !== 'blocked' && (
@@ -156,10 +191,15 @@ export default function Videos() {
                   </td>
                 </tr>
               ))}
-              {filtered.length === 0 && <tr><td colSpan={7} style={{ color: 'var(--muted)', textAlign: 'center' }}>No videos</td></tr>}
+              {vids.length === 0 && <tr><td colSpan={6} style={{ color: 'var(--muted)', textAlign: 'center' }}>No videos</td></tr>}
             </tbody>
           </table>
         </div>
+        </div>
+        ))
+      )}
+      {!loading && filtered.length === 0 && (
+        <div className="card" style={{ textAlign: 'center', color: 'var(--muted)' }}>No videos found</div>
       )}
 
       {uploadOpen && (
@@ -201,7 +241,7 @@ export default function Videos() {
             <div className="row" style={{ marginBottom: 14, flexWrap: 'wrap', gap: 8 }}>
               <span className="badge b-blue">{edit.status}</span>
               {edit.width && edit.height && <span className="badge b-gray">{edit.width}×{edit.height}</span>}
-              {edit.duration_seconds != null && <span className="badge b-gray">{Math.floor(edit.duration_seconds / 60)}:{String(Math.floor(edit.duration_seconds % 60)).padStart(2, '0')}</span>}
+              {edit.duration_seconds != null && <span className="badge b-gray">{humanDur(edit.duration_seconds)}</span>}
               {edit.resolutions?.map((r) => (
                 <span key={r.resolution} className={`badge ${r.status === 'ready' ? 'b-green' : 'b-yellow'}`}>{r.resolution} · {r.status}</span>
               ))}

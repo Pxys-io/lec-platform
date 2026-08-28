@@ -44,8 +44,10 @@ export default function Panic() {
         <div className="grid g3">
           <div><label>Target</label>
             <select value={type} onChange={(e) => setType(e.target.value)} data-testid="panic-type">
-              <option value="global">Global</option><option value="user">User ID</option>
-              <option value="platform">Platform</option><option value="version">Version</option>
+              <option value="global">🌍 Everyone (global)</option>
+              <option value="user">👤 Specific user</option>
+              <option value="platform">📱 Platform (android/ios)</option>
+              <option value="version">🏷 App version</option>
             </select>
           </div>
           <div><label>Value (for non-global)</label><input value={value} onChange={(e) => setValue(e.target.value)} /></div>
@@ -58,12 +60,14 @@ export default function Panic() {
         {cfgs.map((c) => (
           <div className="card spread" key={c.id}>
             <div>
-              <b>{c.target_type}</b> {c.target_value && <span className="mono">{c.target_value}</span>}
-              <div className="sub" style={{ margin: '4px 0 0' }}>{c.webview_url}</div>
+              <b>
+                {c.target_type === 'global' ? '🌍 Everyone' : c.target_type === 'user' ? '👤 One user' : c.target_type === 'platform' ? `📱 Platform: ${c.target_value}` : `🏷 Version: ${c.target_value}`}
+              </b>
+              <div className="sub" style={{ margin: '4px 0 0' }}>Redirects to {c.webview_url}</div>
             </div>
             <div className="row">
               <span className={`badge ${c.is_active ? 'b-red' : 'b-gray'}`}>{c.is_active ? 'ACTIVE' : 'off'}</span>
-              <button className="btn ghost small" onClick={() => toggle(c)}>{c.is_active ? 'Disable' : 'Enable'}</button>
+              <button className="btn ghost small" onClick={() => toggle(c)}>{c.is_active ? 'Turn off' : 'Turn on'}</button>
               <button className="btn danger small" onClick={() => del(c)}>✕</button>
             </div>
           </div>

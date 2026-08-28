@@ -32,25 +32,28 @@ export default function Settings() {
       <div className="card" style={{ maxWidth: 560 }} data-testid="settings-card">
         <div className="field"><label>Server mode</label>
           <select value={mode.server_mode} onChange={(e) => setMode({ ...mode, server_mode: e.target.value })} data-testid="set-mode">
-            <option value="hybrid">Hybrid (stream + downloads)</option>
-            <option value="cloud_only">Cloud only (no downloads)</option>
-            <option value="local_only">Local only (downloads)</option>
+            <option value="hybrid">Hybrid — stream online & allow downloads</option>
+            <option value="cloud_only">Cloud only — streaming, downloads blocked</option>
+            <option value="local_only">Local only — downloaded content, server storage kept light</option>
           </select>
         </div>
         <div className="field"><label>Download policy</label>
           <select value={mode.download_policy} onChange={(e) => setMode({ ...mode, download_policy: e.target.value })}>
-            <option value="allow">Allow downloads</option>
-            <option value="ban">Ban downloaders</option>
-            <option value="auto_delete">Auto-delete downloads</option>
+            <option value="allow">Allow — students can download</option>
+            <option value="ban">Strict — downloaders get banned</option>
+            <option value="auto_delete">Auto-delete — remove downloaded copies</option>
           </select>
         </div>
         <div className="field"><label>On mode mismatch</label>
           <select value={mode.mode_mismatch_action} onChange={(e) => setMode({ ...mode, mode_mismatch_action: e.target.value })}>
-            <option value="warn">Warn</option>
-            <option value="block">Block playback</option>
-            <option value="auto_delete">Auto-delete local file</option>
+            <option value="warn">Warn only — show a notice</option>
+            <option value="block">Block — refuse playback</option>
+            <option value="auto_delete">Auto-delete — wipe the file</option>
           </select>
         </div>
+        <p className="sub" style={{ marginTop: 8 }}>
+          Applies to every student app on next launch. Hybrid is the normal mode; use Cloud only to stop leaks, Local only when internet is unreliable.
+        </p>
         <button className="btn" onClick={save} disabled={busy} data-testid="btn-save-settings">{busy ? 'Saving…' : 'Save'}</button>
       </div>
     </>

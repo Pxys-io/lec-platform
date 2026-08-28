@@ -18,12 +18,14 @@ export default function Home() {
   }, [])
 
   const cards = stats ? [
-    { k: 'Total Users', v: stats.total_users },
+    { k: 'Students & staff', v: stats.total_users },
     { k: 'Courses', v: stats.total_courses },
     { k: 'Lessons', v: stats.total_lessons },
-    { k: 'New (30d)', v: stats.new_users_this_month ?? 0 },
-    { k: 'Active (30d)', v: stats.active_users_this_month ?? 0 },
-    { k: 'Watch Time', v: `${Math.round((stats.total_watch_time ?? 0) / 60)}m` },
+    { k: 'New signups this month', v: stats.new_users_this_month ?? 0 },
+    { k: 'Active this month', v: stats.active_users_this_month ?? 0 },
+    { k: 'Hours watched (all time)', v: stats.total_watch_time != null
+    ? stats.total_watch_time >= 3600 ? `${(stats.total_watch_time / 3600).toFixed(1)}h` : `${Math.round(stats.total_watch_time / 60)}m`
+    : 0 },
   ] : []
 
   return (

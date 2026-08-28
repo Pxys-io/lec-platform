@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api'
 import { useToast } from '../toast'
+import { useAuth } from '../auth'
+import SearchSelect from '../components/SearchSelect'
 
 interface Lesson { id: string; title: string; order: number; video_id: string | null; is_published: boolean; lock_type: string }
 interface Course { id: string; title: string; description: string; visibility: string; tags: string[]; instructor_id: string }
-interface Vid { id: string; title: string; status: string }
+interface Vid { id: string; title: string; status: string; folder?: string }
 
 export default function Courses() {
   const { toast } = useToast()
+  const { user } = useAuth()
   const [courses, setCourses] = useState<Course[]>([])
   const [openId, setOpenId] = useState<string | null>(null)
   const [lessons, setLessons] = useState<Lesson[]>([])
@@ -15,10 +18,14 @@ export default function Courses() {
   const [loading, setLoading] = useState(true)
 
   const load = useCallback(async () => {
-    try { setCourses(await api.get<Course[]>('/courses')) }
+    try {
+      let list = await api.get<Course[]>('/courses')
+      if (user?.role === 'instructor') list = list.filter((c) => c.instructor_id === user.id)
+      setCourses(list)
+    }
     catch (e) { toast(e instanceof Error ? e.message : 'Load failed', true) }
     finally { setLoading(false) }
-  }, [toast])
+  }, [toast, user])
   useEffect(() => { load(); api.get<Vid[]>('/videos/manage').then(setVideos).catch(() => {}) }, [load])
 
   const openCourse = async (id: string) => {
@@ -28,17 +35,25 @@ export default function Courses() {
     catch (e) { toast(e instanceof Error ? e.message : 'Load lessons failed', true) }
   }
 
-  // create course
+  // create / edit course
   const [cTitle, setCTitle] = useState('')
   const [cDesc, setCDesc] = useState('')
   const [cVis, setCVis] = useState('private')
   const [cTags, setCTags] = useState('')
   const [cOpen, setCOpen] = useState(false)
-  const createCourse = async () => {
+  const [cEditId, setCEditId] = useState<string | null>(null)
+  const openCreate = () => { setCEditId(null); setCTitle(''); setCDesc(''); setCVis('private'); setCTags(''); setCOpen(true) }
+  const openEdit = (c: Course) => {
+    setCEditId(c.id); setCTitle(c.title); setCDesc(c.description)
+    setCVis(c.visibility); setCTags((c.tags || []).join(', ')); setCOpen(true)
+  }
+  const saveCourse = async () => {
+    const payload = { title: cTitle, description: cDesc, visibility: cVis, tags: cTags.split(',').map((t) => t.trim()).filter(Boolean) }
     try {
-      await api.post('/courses', { title: cTitle, description: cDesc, visibility: cVis, tags: cTags.split(',').map((t) => t.trim()).filter(Boolean), thumbnail_url: null })
-      toast('Course created'); setCOpen(false); setCTitle(''); setCDesc(''); load()
-    } catch (e) { toast(e instanceof Error ? e.message : 'Create failed', true) }
+      if (cEditId) { await api.put(`/courses/${cEditId}`, payload); toast('Course updated') }
+      else { await api.post('/courses', { ...payload, thumbnail_url: null }); toast('Course created') }
+      setCOpen(false); load()
+    } catch (e) { toast(e instanceof Error ? e.message : 'Save failed', true) }
   }
 
   // create lesson
@@ -55,7 +70,7 @@ export default function Courses() {
 
   const attachVideo = async (lesson: Lesson, videoId: string) => {
     try {
-      await api.put(`/lessons/${lesson.id}`, { video_id: videoId || null, is_published: !!videoId })
+      await api.put(`/lessons/${lesson.id}`, { video_id: videoId || '', is_published: !!videoId })
       toast(videoId ? 'Video attached & published' : 'Video detached')
       setLessons(await api.get<Lesson[]>(`/courses/${lesson.id ? courses.find((c) => c.id === openId)?.id : ''}/lessons`))
     } catch (e) { toast(e instanceof Error ? e.message : 'Attach failed', true) }
@@ -91,7 +106,7 @@ export default function Courses() {
     <>
       <div className="spread">
         <div><h1>Courses</h1><p className="sub">Manage courses, lessons and video assignments</p></div>
-        <button className="btn" onClick={() => setCOpen(true)} data-testid="btn-new-course">＋ New Course</button>
+        <button className="btn" onClick={openCreate} data-testid="btn-new-course">＋ New Course</button>
       </div>
 
       {loading ? <p className="sub">Loading…</p> : (
@@ -105,7 +120,8 @@ export default function Courses() {
                   <div className="sub" style={{ margin: '4px 0 0' }}>{c.description}</div>
                 </div>
                 <div className="row" onClick={(e) => e.stopPropagation()}>
-                  <button className="btn ghost small" onClick={() => setCOpen(false) /* noop */}>{openId === c.id ? 'Hide' : 'Lessons'}</button>
+                  <button className="btn ghost small" onClick={(e) => { e.stopPropagation(); openCourse(c.id) }}>{openId === c.id ? 'Hide lessons' : 'Lessons'}</button>
+                  <button className="btn ghost small" onClick={() => openEdit(c)} data-testid="btn-edit-course">Edit</button>
                   <button className="btn danger small" onClick={() => deleteCourse(c)}>Delete</button>
                 </div>
               </div>
@@ -122,17 +138,13 @@ export default function Courses() {
                           </td>
                           <td><b>{l.title}</b></td>
                           <td>
-                            <select
+                            <SearchSelect
+                              testid={`lesson-video-${l.title}`}
+                              options={videos.filter((v) => v.status === 'ready').map((v) => ({ id: v.id, label: v.title || v.id.slice(0, 8), folder: v.folder, hint: v.id.slice(0, 8) }))}
                               value={l.video_id || ''}
-                              onChange={(e) => attachVideo(l, e.target.value)}
-                              style={{ minWidth: 220 }}
-                              data-testid={`lesson-video-${l.title}`}
-                            >
-                              <option value="">— none —</option>
-                              {videos.filter((v) => v.status === 'ready').map((v) => (
-                                <option key={v.id} value={v.id}>{v.title} ({v.id.slice(0, 8)})</option>
-                              ))}
-                            </select>
+                              onChange={(vid) => attachVideo(l, vid)}
+                              placeholder="Search videos or folders…"
+                            />
                           </td>
                           <td>
                             <select value={l.lock_type} style={{ width: 'auto', padding: '5px 8px' }}
@@ -174,7 +186,7 @@ export default function Courses() {
       {cOpen && (
         <div className="modal-bg" onClick={(e) => e.target === e.currentTarget && setCOpen(false)}>
           <div className="modal" data-testid="course-modal">
-            <h3>New Course</h3>
+            <h3>{cEditId ? 'Edit Course' : 'New Course'}</h3>
             <div className="field"><label>Title</label><input value={cTitle} onChange={(e) => setCTitle(e.target.value)} data-testid="course-title" /></div>
             <div className="field"><label>Description</label><textarea rows={2} value={cDesc} onChange={(e) => setCDesc(e.target.value)} /></div>
             <div className="field"><label>Tags (comma separated)</label><input value={cTags} onChange={(e) => setCTags(e.target.value)} placeholder="math, beginner" /></div>
@@ -185,7 +197,7 @@ export default function Courses() {
             </div>
             <div className="row" style={{ justifyContent: 'flex-end' }}>
               <button className="btn ghost" onClick={() => setCOpen(false)}>Cancel</button>
-              <button className="btn" onClick={createCourse} disabled={!cTitle} data-testid="course-create">Create</button>
+              <button className="btn" onClick={saveCourse} disabled={!cTitle} data-testid="course-create">{cEditId ? 'Save changes' : 'Create'}</button>
             </div>
           </div>
         </div>

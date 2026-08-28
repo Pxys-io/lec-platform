@@ -182,7 +182,8 @@ def update_lesson(
     if request.order is not None:
         lesson.order = request.order
     if request.video_id is not None:
-        lesson.video_id = request.video_id
+        # empty string clears the attachment (allows detaching videos)
+        lesson.video_id = request.video_id or None
     if request.lock_type is not None:
         lesson.lock_type = request.lock_type
     if request.is_published is not None:
