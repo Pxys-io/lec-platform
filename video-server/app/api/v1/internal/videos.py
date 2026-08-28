@@ -1017,7 +1017,7 @@ def get_overlay_segment(
     temp_dir = Path(settings.CACHE_STORAGE_PATH) / "overlays"
     temp_dir.mkdir(parents=True, exist_ok=True)
 
-    overlay_file = temp_dir / f"{file_hash}.ts"
+    overlay_file = temp_dir / f"{file_hash}.mp4"
     generated_now = False
 
     if not overlay_file.exists():
@@ -1059,8 +1059,11 @@ def get_overlay_segment(
             "-vf", vf,
             "-map", "0:v:0",
             "-map", "0:a:0?",
-            "-c:v", "libx264",
+            "-c:v", "libx264", "-profile:v", "high",
+            "-pix_fmt", "yuv420p",
             "-c:a", "copy",
+            "-f", "mp4",
+            "-movflags", "frag_keyframe+empty_moov+default_base_moof+faststart",
             str(overlay_file),
             "-y",
         ]
@@ -1077,7 +1080,7 @@ def get_overlay_segment(
 
     if storage.r2_enabled():
         try:
-            storage.upload_file(r2_key, str(overlay_file), content_type="video/mp2t")
+            storage.upload_file(r2_key, str(overlay_file), content_type="video/mp4")
         except Exception as e:
             print(f"R2 overlay upload error: {e}")
 
@@ -1087,7 +1090,7 @@ def get_overlay_segment(
         return RedirectResponse(storage.public_url(r2_key), status_code=307)
 
     from fastapi.responses import FileResponse
-    return FileResponse(str(overlay_file), media_type="video/mp2t")
+    return FileResponse(str(overlay_file), media_type="video/mp4")
 
 
 @router.get("/watermark/{resolution_id}/{info_b64}/{break_dur}.ts")

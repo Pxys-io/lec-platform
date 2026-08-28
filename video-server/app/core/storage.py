@@ -65,7 +65,7 @@ def video_prefix(video_id: str) -> str:
 
 
 def overlay_key(file_hash: str) -> str:
-    return f"watermarks/overlays/{file_hash}.ts"
+    return f"watermarks/overlays/{file_hash}.mp4"
 
 
 def break_screen_key(file_hash: str) -> str:
