@@ -27,6 +27,25 @@ export default function Users() {
   const [q, setQ] = useState('')
   const [sel, setSel] = useState<U | null>(null)
   const [devices, setDevices] = useState<Dev[]>([])
+  const [createOpen, setCreateOpen] = useState(false)
+  const [nEmail, setNEmail] = useState('')
+  const [nPass, setNPass] = useState('')
+  const [nPhone, setNPhone] = useState('')
+  const [nRole, setNRole] = useState('student')
+  const [nFirst, setNFirst] = useState('')
+  const [nLast, setNLast] = useState('')
+  const [nBusy, setNBusy] = useState(false)
+
+  const createUser = async () => {
+    setNBusy(true)
+    try {
+      await api.post('/users', { email: nEmail, password: nPass, phone: nPhone || null, role: nRole, first_name: nFirst || null, last_name: nLast || null })
+      toast(`Account created for ${nEmail}`)
+      setCreateOpen(false); setNEmail(''); setNPass(''); setNPhone(''); setNFirst(''); setNLast(''); setNRole('student')
+      load()
+    } catch (e) { toast(e instanceof Error ? e.message : 'Create failed', true) }
+    finally { setNBusy(false) }
+  }
 
   const load = useCallback(async () => {
     try { setUsers(await api.get<U[]>('/users')) }
@@ -49,9 +68,11 @@ export default function Users() {
 
   return (
     <>
-      <h1>Users</h1>
-      <p className="sub">{users.length} accounts</p>
-      <input placeholder="Search email…" value={q} onChange={(e) => setQ(e.target.value)} style={{ maxWidth: 360, marginBottom: 14 }} />
+      <div className="spread">
+        <div><h1>Users</h1><p className="sub">{users.length} accounts</p></div>
+        <button className="btn" onClick={() => setCreateOpen(true)} data-testid="btn-new-user">＋ New User</button>
+      </div>
+      <input placeholder="Search email…" value={q} onChange={(e) => setQ(e.target.value)} style={{ maxWidth: 360, marginBottom: 14 }} data-testid="users-search" />
 
       <div className="card" style={{ padding: 0 }}>
         <table>
@@ -118,6 +139,34 @@ export default function Users() {
             {devices.length === 0 && <p className="sub">No devices</p>}
             <div className="row" style={{ justifyContent: 'flex-end', marginTop: 12 }}>
               <button className="btn ghost" onClick={() => setSel(null)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {createOpen && (
+        <div className="modal-bg" onClick={(e) => e.target === e.currentTarget && setCreateOpen(false)}>
+          <div className="modal" data-testid="create-user-modal">
+            <h3>New User</h3>
+            <div className="grid g2">
+              <div className="field"><label>First name</label><input value={nFirst} onChange={(e) => setNFirst(e.target.value)} /></div>
+              <div className="field"><label>Last name</label><input value={nLast} onChange={(e) => setNLast(e.target.value)} /></div>
+            </div>
+            <div className="field"><label>Email</label><input type="email" value={nEmail} onChange={(e) => setNEmail(e.target.value)} data-testid="nu-email" /></div>
+            <div className="grid g2">
+              <div className="field"><label>Password</label><input type="password" value={nPass} onChange={(e) => setNPass(e.target.value)} data-testid="nu-pass" /></div>
+              <div className="field"><label>Phone</label><input value={nPhone} onChange={(e) => setNPhone(e.target.value)} /></div>
+            </div>
+            <div className="field"><label>Role</label>
+              <select value={nRole} onChange={(e) => setNRole(e.target.value)} data-testid="nu-role">
+                <option value="student">🎓 Student</option>
+                <option value="instructor">📎 Instructor</option>
+                <option value="admin">🛡 Admin</option>
+                <option value="super_admin">👑 Super Admin</option>
+              </select>
+            </div>
+            <div className="row" style={{ justifyContent: 'flex-end' }}>
+              <button className="btn ghost" onClick={() => setCreateOpen(false)}>Cancel</button>
+              <button className="btn" onClick={createUser} disabled={!nEmail || !nPass || nBusy} data-testid="nu-create">{nBusy ? 'Creating…' : 'Create Account'}</button>
             </div>
           </div>
         </div>

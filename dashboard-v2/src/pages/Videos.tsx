@@ -149,7 +149,11 @@ export default function Videos() {
         </div>
       )}
 
-      <input placeholder="Search by title or ID…" value={q} onChange={(e) => setQ(e.target.value)} style={{ maxWidth: 380, marginBottom: 14 }} data-testid="videos-search" />
+      <div className="row" style={{ maxWidth: 380, marginBottom: 14 }}>
+        <input placeholder="Search by title or ID…" value={q} onChange={(e) => setQ(e.target.value)} data-testid="videos-search" style={{ margin: 0 }} />
+        {q && <button className="btn ghost small" onClick={() => setQ('')} title="Clear search">✕</button>}
+      </div>
+      {q && <p className="sub" style={{ marginTop: -8 }}>{filtered.length} result{filtered.length === 1 ? '' : 's'} for "{q}"</p>}
 
       {loading ? <p className="sub">Loading…</p> : (
         Object.entries(
