@@ -303,13 +303,16 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
             resolution.resolution,
           );
         }
-        // Inject auth token into HLS key URIs so ExoPlayer can fetch without headers (file:// playback)
+        // Inject auth token into all proxy URIs (key / watermark / overlay) so ExoPlayer can fetch without headers (file:// playback)
         final token = apiClient.token ?? '';
-        if (token.isNotEmpty && playlistContent.contains('/key')) {
-          // Replace any existing ?token=... on the key URI with the fresh token
-          playlistContent = playlistContent.replaceAll(
-            RegExp(r'/key(\?token=[^"]*)?"'),
-            '/key?token=$token"',
+        if (token.isNotEmpty && playlistContent.contains('/proxy/')) {
+          playlistContent = playlistContent.replaceAllMapped(
+            RegExp(r'(https://main\.lec\.pxysio\.top/api/v1/videos/proxy[^"\n]*?)(?=")'),
+            (m) {
+              final url = m.group(1)!;
+              final base = url.split('?token=')[0].split('&token=')[0];
+              return '$base?token=$token';
+            },
           );
         }
         await playlistFile.writeAsString(playlistContent);
