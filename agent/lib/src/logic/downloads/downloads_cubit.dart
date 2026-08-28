@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../features/player/logic/video_downloader.dart';
 import '../../api/api_client.dart';
 import '../../repositories/video_repository.dart';
+import '../../models/video.dart';
 import 'downloads_state.dart';
 
 class DownloadsCubit extends Cubit<DownloadsState> {
@@ -127,15 +128,37 @@ class DownloadsCubit extends Cubit<DownloadsState> {
 
     emit(state.copyWith(active: [...state.active, activeItem]));
 
+    String effectiveResolution = resolution;
     try {
-      final playlistContent = await videoRepository.getPlaylist(
-        lessonId,
-        resolution,
-      );
+      String playlistContent;
+      try {
+        playlistContent = await videoRepository.getPlaylist(
+          lessonId,
+          effectiveResolution,
+        );
+      } catch (e) {
+        // Fallback if requested resolution not available (e.g., 1080p on 720p max video)
+        if (e is ApiException && e.statusCode == 404) {
+          final manifest = await videoRepository.getVideoManifest(lessonId);
+          if (manifest.resolutions.isNotEmpty) {
+            final sorted = List<VideoResolution>.from(manifest.resolutions)
+              ..sort((a, b) => b.bitrate.compareTo(a.bitrate));
+            effectiveResolution = sorted.first.resolution;
+            playlistContent = await videoRepository.getPlaylist(
+              lessonId,
+              effectiveResolution,
+            );
+          } else {
+            rethrow;
+          }
+        } else {
+          rethrow;
+        }
+      }
 
       await downloader.downloadVideo(
         lessonId: lessonId,
-        resolution: resolution,
+        resolution: effectiveResolution,
         playlistContent: playlistContent,
         modeWhenDownloaded: modeWhenDownloaded,
         onProgress: (p) {
@@ -144,7 +167,7 @@ class DownloadsCubit extends Cubit<DownloadsState> {
               return ActiveDownload(
                 lessonId: lessonId,
                 title: title,
-                resolution: resolution,
+                resolution: effectiveResolution,
                 progress: p.progress,
                 totalSegments: p.totalSegments,
                 downloadedSegments: p.downloadedSegments,
