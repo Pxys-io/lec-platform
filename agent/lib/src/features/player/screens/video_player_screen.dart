@@ -307,10 +307,13 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
         final token = apiClient.token ?? '';
         if (token.isNotEmpty && playlistContent.contains('/proxy/')) {
           playlistContent = playlistContent.replaceAllMapped(
-            RegExp(r'(https://main\.lec\.pxysio\.top/api/v1/videos/proxy[^"\n]*?)(?=")'),
+            RegExp(r'https://main\.lec\.pxysio\.top/api/v1/videos/proxy[^\s"\n]+'),
             (m) {
-              final url = m.group(1)!;
+              final url = m.group(0)!;
+              if (url.contains('?token=')) return url;
+              // Strip any existing token query part and inject fresh token
               final base = url.split('?token=')[0].split('&token=')[0];
+              // Preserve other query params if present (unlikely)
               return '$base?token=$token';
             },
           );
