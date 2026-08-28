@@ -28,7 +28,7 @@ export default function Users() {
   }
 
   const act = async (fn: () => Promise<unknown>, ok: string) => {
-    try { await fn(); toast(ok); load() } catch (e) { toast(e instanceof Error ? e.message : 'Failed', true) }
+    try { await fn(); toast(ok); load(); sel && openUser(sel) } catch (e) { toast(e instanceof Error ? e.message : 'Failed', true) }
   }
 
   const filtered = users.filter((u) => u.email.toLowerCase().includes(q.toLowerCase()))
@@ -46,7 +46,7 @@ export default function Users() {
           <tbody data-testid="users-table">
             {filtered.map((u) => (
               <tr key={u.id}>
-                <td><b>{u.email}</b></td>
+                <td><b>{u.email}</b><div className="sub" style={{ margin: 0 }}>{[u.first_name, u.last_name].filter(Boolean).join(' ') || '—'}{u.phone ? ` · ${u.phone}` : ''}</div></td>
                 <td><span className={`badge ${roleBadge(u.role)}`}>{u.role}</span></td>
                 <td>{u.banned_until && new Date(u.banned_until) > new Date() ? <span className="badge b-red">banned</span> : <span className="badge b-green">active</span>}</td>
                 <td className="mono">{u.last_login ? new Date(u.last_login).toLocaleDateString() : '—'}</td>
@@ -68,11 +68,27 @@ export default function Users() {
               {sel.banned_until && new Date(sel.banned_until) > new Date() ? (
                 <button className="btn small" onClick={() => act(() => api.post(`/users/${sel.id}/unban`), 'Unbanned')}>Unban</button>
               ) : (
-                <button className="btn danger small" onClick={() => act(() => api.post(`/users/${sel.id}/ban?ban_duration_days=7`), 'Banned 7d')}>Ban 7d</button>
+                <>
+                  <select defaultValue="7" style={{ width: 'auto' }} data-testid="ban-days">
+                    <option value="1">1 day</option><option value="7">7 days</option>
+                    <option value="30">30 days</option><option value="365">1 year</option>
+                  </select>
+                  <button className="btn danger small" onClick={() => {
+                    const d = document.querySelector('[data-testid="ban-days"] select, select[data-testid="ban-days"]') as HTMLSelectElement
+                    act(() => api.post(`/users/${sel.id}/ban?ban_duration_days=${d?.value || 7}`), `Banned ${d?.value || 7}d`)
+                  }}>Ban</button>
+                </>
               )}
               <button className="btn ghost small" onClick={() => act(() => api.post(`/users/${sel.id}/devices/reset`), 'Devices reset')}>Reset devices</button>
-              {sel.role === 'student' && <button className="btn ghost small" onClick={() => act(() => api.put(`/users/${sel.id}`, { role: 'instructor' }), 'Promoted')}>Make instructor</button>}
-              {sel.role === 'instructor' && <button className="btn ghost small" onClick={() => act(() => api.put(`/users/${sel.id}`, { role: 'student' }), 'Demoted')}>Make student</button>}
+              <select
+                value={sel.role} style={{ width: 'auto' }} data-testid="role-select"
+                onChange={(e) => act(() => api.put(`/users/${sel.id}`, { role: e.target.value }), `Role -> ${e.target.value}`)}
+              >
+                <option value="student">student</option>
+                <option value="instructor">instructor</option>
+                <option value="admin">admin</option>
+                <option value="super_admin">super_admin</option>
+              </select>
             </div>
             <h2>Devices ({devices.length})</h2>
             {devices.map((d) => (

@@ -198,6 +198,14 @@ export default function Videos() {
         <div className="modal-bg" onClick={(e) => e.target === e.currentTarget && setEdit(null)}>
           <div className="modal" data-testid="edit-modal">
             <h3>Edit — {edit.title}</h3>
+            <div className="row" style={{ marginBottom: 14, flexWrap: 'wrap', gap: 8 }}>
+              <span className="badge b-blue">{edit.status}</span>
+              {edit.width && edit.height && <span className="badge b-gray">{edit.width}×{edit.height}</span>}
+              {edit.duration_seconds != null && <span className="badge b-gray">{Math.floor(edit.duration_seconds / 60)}:{String(Math.floor(edit.duration_seconds % 60)).padStart(2, '0')}</span>}
+              {edit.resolutions?.map((r) => (
+                <span key={r.resolution} className={`badge ${r.status === 'ready' ? 'b-green' : 'b-yellow'}`}>{r.resolution} · {r.status}</span>
+              ))}
+            </div>
             <div className="grid g2">
               <div className="field"><label>Title</label><input value={edit.title} onChange={(e) => setEdit({ ...edit, title: e.target.value })} /></div>
               <div className="field"><label>Folder</label><input value={edit.folder} onChange={(e) => setEdit({ ...edit, folder: e.target.value })} /></div>
@@ -229,7 +237,10 @@ export default function Videos() {
                 <div className="grid g3">
                   <div className="field"><label>Color</label><input type="color" value={edit.watermark_color} onChange={(e) => setEdit({ ...edit, watermark_color: e.target.value })} /></div>
                   <div className="field"><label>Font size</label><input type="number" value={edit.watermark_font_size} onChange={(e) => setEdit({ ...edit, watermark_font_size: +e.target.value })} /></div>
-                  <div className="field"><label>Opacity</label><input type="number" step="0.1" min="0" max="1" value={edit.watermark_opacity} onChange={(e) => setEdit({ ...edit, watermark_opacity: +e.target.value })} /></div>
+                  <div className="field"><label>Opacity ({Math.round(edit.watermark_opacity * 100)}%)</label>
+                    <input type="range" min="0" max="1" step="0.05" value={edit.watermark_opacity}
+                      onChange={(e) => setEdit({ ...edit, watermark_opacity: +e.target.value })} style={{ padding: 0, accentColor: 'var(--primary)' }} />
+                  </div>
                 </div>
                 {edit.watermark_mode === 'insert' ? (
                   <div className="grid g3">
