@@ -68,7 +68,7 @@ export default function Users() {
               {sel.banned_until && new Date(sel.banned_until) > new Date() ? (
                 <button className="btn small" onClick={() => act(() => api.post(`/users/${sel.id}/unban`), 'Unbanned')}>Unban</button>
               ) : (
-                <button className="btn danger small" onClick={() => act(() => api.post(`/users/${sel.id}/ban`, { days: 7, reason: 'Dashboard' }), 'Banned 7d')}>Ban 7d</button>
+                <button className="btn danger small" onClick={() => act(() => api.post(`/users/${sel.id}/ban?ban_duration_days=7`), 'Banned 7d')}>Ban 7d</button>
               )}
               <button className="btn ghost small" onClick={() => act(() => api.post(`/users/${sel.id}/devices/reset`), 'Devices reset')}>Reset devices</button>
               {sel.role === 'student' && <button className="btn ghost small" onClick={() => act(() => api.put(`/users/${sel.id}`, { role: 'instructor' }), 'Promoted')}>Make instructor</button>}
