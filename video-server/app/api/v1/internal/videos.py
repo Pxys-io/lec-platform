@@ -1129,7 +1129,7 @@ def get_dynamic_watermark_segment(
 
     break_dir = Path(settings.CACHE_STORAGE_PATH) / "break_screens"
     break_dir.mkdir(parents=True, exist_ok=True)
-    break_file = break_dir / f"{file_hash}.ts"
+    break_file = break_dir / f"{file_hash}.mp4"
     generated_now = False
 
     if not break_file.exists():
@@ -1172,11 +1172,16 @@ def get_dynamic_watermark_segment(
         cmd = [
             "ffmpeg", "-y",
             "-f", "lavfi",
-            "-i", f"color=c=darkblue:s={res.width}x{res.height}:d={break_dur}",
+            "-i", f"color=c=darkblue:s={res.width}x{res.height}:d={break_dur}:r=30",
             "-vf", vf,
-            "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+            "-c:v", "libx264", "-profile:v", "high", "-preset", "fast", "-crf", "23",
             "-pix_fmt", "yuv420p",
-            "-f", "mpegts",
+            "-r", "30",
+            "-g", "30",
+            "-keyint_min", "30",
+            "-sc_threshold", "0",
+            "-f", "mp4",
+            "-movflags", "frag_keyframe+empty_moov+default_base_moof+faststart",
         ]
 
         if tts_wav and tts_wav.exists():
@@ -1187,15 +1192,18 @@ def get_dynamic_watermark_segment(
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0 or not break_file.exists():
             print(f"Break screen ffmpeg error: {result.stderr[-300:]}")
-            fallback = break_dir / f"fallback_{res.width}x{res.height}.ts"
+            fallback = break_dir / f"fallback_{res.width}x{res.height}.mp4"
             if not fallback.exists():
                 subprocess.run([
                     "ffmpeg", "-y",
                     "-f", "lavfi",
-                    "-i", f"color=c=darkblue:s={res.width}x{res.height}:d=5",
-                    "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
+                    "-i", f"color=c=darkblue:s={res.width}x{res.height}:d=5:r=30",
+                    "-c:v", "libx264", "-profile:v", "high", "-preset", "ultrafast", "-crf", "28",
                     "-pix_fmt", "yuv420p",
-                    "-f", "mpegts",
+                    "-r", "30",
+                    "-g", "30",
+                    "-f", "mp4",
+                    "-movflags", "frag_keyframe+empty_moov+default_base_moof+faststart",
                     str(fallback),
                 ], capture_output=True)
             if fallback.exists():
@@ -1209,7 +1217,7 @@ def get_dynamic_watermark_segment(
 
     if storage.r2_enabled() and break_file.exists():
         try:
-            storage.upload_file(r2_key, str(break_file), content_type="video/mp2t")
+            storage.upload_file(r2_key, str(break_file), content_type="video/mp4")
         except Exception as e:
             print(f"R2 break screen upload error: {e}")
 
@@ -1219,7 +1227,7 @@ def get_dynamic_watermark_segment(
         return RedirectResponse(storage.public_url(r2_key), status_code=307)
 
     from fastapi.responses import FileResponse
-    return FileResponse(str(break_file), media_type="video/mp2t")
+    return FileResponse(str(break_file), media_type="video/mp4")
 
 
 @router.get("/{video_id}/key")
