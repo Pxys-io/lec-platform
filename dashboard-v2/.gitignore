@@ -1,0 +1,8 @@
+
+.dart_tool/
+.flutter-plugins-dependencies
+pubspec.lock
+devtools_options.yaml
+.nvimlog
+agent/linux/flutter/generated_plugins.cmake
+agent/windows/flutter/generated_plugins.cmake
