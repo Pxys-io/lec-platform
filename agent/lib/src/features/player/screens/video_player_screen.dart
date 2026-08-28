@@ -136,7 +136,13 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     try {
       final videoRepo = context.read<VideoRepository>();
       final stopwatch = Stopwatch()..start();
-      await videoRepo.getPlaylist(widget.lessonId, '360p');
+      String testRes = '270p';
+      if (_manifest != null && _manifest!.resolutions.isNotEmpty) {
+        final sorted = List<VideoResolution>.from(_manifest!.resolutions)
+          ..sort((a, b) => a.bitrate.compareTo(b.bitrate));
+        testRes = sorted.first.resolution;
+      }
+      await videoRepo.getPlaylist(widget.lessonId, testRes);
       stopwatch.stop();
       final elapsedSec = stopwatch.elapsedMilliseconds / 1000;
       if (elapsedSec > 0) {
@@ -291,15 +297,23 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
 
         if (await playlistFile.exists()) {
           playlistContent = await playlistFile.readAsString();
-          videoUrl = playlistFile.path;
         } else {
           playlistContent = await videoRepo.getPlaylist(
             widget.lessonId,
             resolution.resolution,
           );
-          await playlistFile.writeAsString(playlistContent);
-          videoUrl = playlistFile.path;
         }
+        // Inject auth token into HLS key URIs so ExoPlayer can fetch without headers (file:// playback)
+        final token = apiClient.token ?? '';
+        if (token.isNotEmpty && playlistContent.contains('/key')) {
+          // Replace any existing ?token=... on the key URI with the fresh token
+          playlistContent = playlistContent.replaceAll(
+            RegExp(r'/key(\?token=[^"]*)?"'),
+            '/key?token=$token"',
+          );
+        }
+        await playlistFile.writeAsString(playlistContent);
+        videoUrl = playlistFile.path;
       }
 
       _watermarkTimes = _parseWatermarkTimes(playlistContent);

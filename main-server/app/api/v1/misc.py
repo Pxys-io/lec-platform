@@ -1134,15 +1134,40 @@ async def proxy_video_server_content(
     full_path: str,
     request: Request,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    authorization: Optional[str] = Header(None),
 ):
     from app.core.config import settings
+    from app.core.security import decode_token
     import httpx
     from fastapi.responses import Response, StreamingResponse
+
+    # Accept token via Authorization header or ?token= query param (needed for ExoPlayer/HLS key fetches)
+    token = None
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.split(" ", 1)[1]
+    elif "token" in request.query_params:
+        token = request.query_params["token"]
+
+    user = None
+    if token:
+        try:
+            payload = decode_token(token)
+            uid = payload.get("sub")
+            if uid:
+                user = db.get(User, uid)
+        except Exception:
+            user = None
+
+    # For video-related proxy paths, require a valid user token (from header or query)
+    if not user:
+        # Allow only if it's a public R2 redirect path? For now, enforce auth for all proxy
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
 
     async with httpx.AsyncClient() as client:
         url = f"{settings.VIDEO_SERVER_INTERNAL_URL}/{full_path}"
         params = dict(request.query_params)
+        # Don't forward the token query param to video-server (it doesn't need it)
+        params.pop("token", None)
 
         r = await client.get(url, params=params, timeout=120)
         media_type = r.headers.get("content-type", "video/mp2t")
