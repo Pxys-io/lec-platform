@@ -1163,7 +1163,7 @@ def get_dynamic_watermark_segment(
         vf = (
             f"drawtext=text='{title_text}':fontsize=48:fontcolor=white:"
             f"x=(w-text_w)/2:y=h/2-100,"
-            f"drawtext=text='{subtitle}':fontsize=24:fontcolor=lightgray:"
+            f"drawtext=text='{subtitle}':fontsize=24:fontcolor=0xD3D3D3:"
             f"x=(w-text_w)/2:y=h/2-40,"
             f"drawtext=text='{countdown_expr}':fontsize=120:fontcolor=yellow:"
             f"x=(w-text_w)/2:y=h/2+80"
@@ -1197,7 +1197,7 @@ def get_dynamic_watermark_segment(
                 subprocess.run([
                     "ffmpeg", "-y",
                     "-f", "lavfi",
-                    "-i", f"color=c=darkblue:s={res.width}x{res.height}:d=5:r=30",
+                    "-i", f"color=c=darkblue:s={res.width}x{res.height}:d={break_dur}:r=30",
                     "-c:v", "libx264", "-profile:v", "high", "-preset", "ultrafast", "-crf", "28",
                     "-pix_fmt", "yuv420p",
                     "-r", "30",
