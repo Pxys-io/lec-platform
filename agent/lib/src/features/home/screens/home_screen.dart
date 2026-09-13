@@ -3,9 +3,10 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:go_router/go_router.dart';
 import '../../../logic/auth/auth_cubit.dart';
-import '../../../logic/auth/auth_state.dart';
 import '../../../logic/course/course_cubit.dart';
 import '../../../logic/stats/stats_cubit.dart';
+import '../../../models/user.dart';
+import '../../../widgets/app_widgets.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -18,12 +19,7 @@ class HomeScreen extends StatelessWidget {
       appBar: AppBar(
         title: Row(
           children: [
-            CircleAvatar(
-              radius: 18,
-              backgroundImage: user?.avatarUrl != null 
-                ? NetworkImage(user!.avatarUrl!) 
-                : const NetworkImage('https://i.pravatar.cc/150'),
-            ),
+            _UserAvatar(user: user),
             const SizedBox(width: 12),
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -33,8 +29,10 @@ class HomeScreen extends StatelessWidget {
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
                 Text(
-                  user?.fullName ?? 'Student',
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: 16),
+                  user?.fullName.isNotEmpty == true ? user!.fullName : 'Student',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleLarge?.copyWith(fontSize: 16),
                 ),
               ],
             ),
@@ -42,35 +40,40 @@ class HomeScreen extends StatelessWidget {
         ),
         actions: [
           IconButton(
-            icon: const Icon(LucideIcons.flame, color: Colors.orange),
-            onPressed: () {},
+            icon: const Icon(LucideIcons.messageSquare),
+            tooltip: 'Inbox',
+            onPressed: () => context.push('/inbox'),
           ),
-          const Center(
-            child: Padding(
-              padding: EdgeInsets.only(right: 16),
-              child: Text('14 Days', style: TextStyle(fontWeight: FontWeight.bold)),
-            ),
-          ),
+          const SizedBox(width: 8),
         ],
       ),
       body: RefreshIndicator(
         onRefresh: () async {
-          context.read<CourseCubit>().loadCourses();
-          context.read<StatsCubit>().loadStats();
+          await Future.wait([
+            context.read<CourseCubit>().loadCourses(),
+            context.read<StatsCubit>().loadStats(),
+          ]);
         },
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Continue Learning', style: Theme.of(context).textTheme.titleLarge),
-              const SizedBox(height: 16),
+              const AppSectionHeader(title: 'Continue Learning'),
+              const SizedBox(height: 12),
               BlocBuilder<StatsCubit, StatsState>(
                 builder: (context, state) {
-                  if (state is StatsLoaded && state.continueWatching.isNotEmpty) {
-                    final lastItem = state.continueWatching.first;
+                  if (state is StatsLoading) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  if (state is StatsLoaded &&
+                      state.continueWatching.isNotEmpty) {
+                    final item = state.continueWatching.first;
+                    final progress = (item['completion_percentage'] as num?)
+                            ?.toDouble() ??
+                        0.0;
                     return Card(
-                      child: Container(
+                      child: Padding(
                         padding: const EdgeInsets.all(16),
                         child: Row(
                           children: [
@@ -78,7 +81,11 @@ class HomeScreen extends StatelessWidget {
                               width: 80,
                               height: 60,
                               decoration: BoxDecoration(
-                                color: Colors.grey[300],
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.primaryContainer.withValues(
+                                  alpha: 0.4,
+                                ),
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: const Icon(LucideIcons.play),
@@ -89,14 +96,20 @@ class HomeScreen extends StatelessWidget {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    lastItem['lesson_title'] ?? 'Continue Lesson',
-                                    style: Theme.of(context).textTheme.titleMedium,
+                                    item['lesson_title']?.toString() ??
+                                        'Continue Lesson',
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.titleMedium,
                                   ),
                                   const SizedBox(height: 4),
-                                  LinearProgressIndicator(value: (lastItem['progress'] ?? 0) / 100),
+                                  LinearProgressIndicator(
+                                    value: (progress / 100).clamp(0.0, 1.0),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
                                   const SizedBox(height: 4),
                                   Text(
-                                    '${lastItem['progress'] ?? 0}% completed',
+                                    '${progress.toStringAsFixed(0)}% completed',
                                     style: Theme.of(context).textTheme.bodySmall,
                                   ),
                                 ],
@@ -105,10 +118,17 @@ class HomeScreen extends StatelessWidget {
                             const SizedBox(width: 16),
                             ElevatedButton(
                               onPressed: () {
-                                // context.push('/video-player', extra: { ... });
+                                final user = context.read<AuthCubit>().state.user;
+                                context.push('/video-player', extra: {
+                                  'lessonId': item['lesson_id'],
+                                  'userEmail': user?.email ?? '',
+                                  'studentId': user?.id ?? '',
+                                });
                               },
                               style: ElevatedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(horizontal: 16),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                ),
                                 minimumSize: const Size(0, 36),
                               ),
                               child: const Text('Resume'),
@@ -118,91 +138,99 @@ class HomeScreen extends StatelessWidget {
                       ),
                     );
                   }
-                  return const Card(
-                    child: Padding(
-                      padding: EdgeInsets.all(16.0),
-                      child: Text('No recent activity. Start learning today!'),
-                    ),
+                  return AppEmptyState(
+                    icon: LucideIcons.playCircle,
+                    title: 'No recent activity',
+                    message: 'Start watching a lesson to pick up where you left off.',
                   );
                 },
               ),
               const SizedBox(height: 24),
-              Text('Quick View', style: Theme.of(context).textTheme.titleLarge),
-              const SizedBox(height: 16),
+              const AppSectionHeader(title: 'Quick View'),
+              const SizedBox(height: 12),
               BlocBuilder<StatsCubit, StatsState>(
                 builder: (context, state) {
                   if (state is StatsLoaded) {
                     final stats = state.overview;
                     return Row(
                       children: [
-                        _buildQuickStat(context, 'Lessons', stats.totalLessons.toString(), LucideIcons.playCircle),
+                        Expanded(
+                          child: AppStatCard(
+                            icon: LucideIcons.bookOpen,
+                            label: 'Courses',
+                            value: stats.totalCourses.toString(),
+                          ),
+                        ),
                         const SizedBox(width: 12),
-                        _buildQuickStat(context, 'Quizzes', stats.totalQuizzes.toString(), LucideIcons.helpCircle),
+                        Expanded(
+                          child: AppStatCard(
+                            icon: LucideIcons.checkCircle,
+                            label: 'Completed',
+                            value: stats.totalLessons.toString(),
+                          ),
+                        ),
                         const SizedBox(width: 12),
-                        _buildQuickStat(context, 'Hours', (stats.totalWatchTime / 3600).toStringAsFixed(1), LucideIcons.clock),
+                        Expanded(
+                          child: AppStatCard(
+                            icon: LucideIcons.clock,
+                            label: 'Hours',
+                            value: (stats.totalWatchTime / 3600)
+                                .toStringAsFixed(1),
+                          ),
+                        ),
                       ],
                     );
                   }
-                  return const SizedBox();
+                  return const SizedBox.shrink();
                 },
               ),
               const SizedBox(height: 24),
-              Text('My Courses', style: Theme.of(context).textTheme.titleLarge),
-              const SizedBox(height: 16),
+              const AppSectionHeader(title: 'My Courses'),
+              const SizedBox(height: 12),
               BlocBuilder<CourseCubit, CourseState>(
                 builder: (context, state) {
+                  if (state is CourseLoading) {
+                    return const AppSkeletonList(itemCount: 2);
+                  }
                   if (state is CourseLoaded) {
+                    if (state.courses.isEmpty) {
+                      return AppEmptyState(
+                        icon: LucideIcons.bookOpen,
+                        title: 'No courses yet',
+                        message: 'Browse the Discover tab to find courses.',
+                      );
+                    }
+                    final courses = state.courses.take(4).toList();
                     return GridView.builder(
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 2,
-                        crossAxisSpacing: 16,
-                        mainAxisSpacing: 16,
-                        childAspectRatio: 0.8,
-                      ),
-                      itemCount: state.courses.length > 4 ? 4 : state.courses.length,
-                      itemBuilder: (context, index) {
-                        final course = state.courses[index];
-                        return Card(
-                          clipBehavior: Clip.antiAlias,
-                          child: InkWell(
-                            onTap: () => context.push('/course-detail', extra: course),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Container(
-                                  height: 100,
-                                  color: Colors.grey[200],
-                                  child: const Center(child: Icon(LucideIcons.book, size: 40)),
-                                ),
-                                Padding(
-                                  padding: const EdgeInsets.all(12.0),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        course.title,
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: Theme.of(context).textTheme.titleMedium?.copyWith(fontSize: 14),
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        'Course Detail',
-                                        style: Theme.of(context).textTheme.bodySmall,
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 2,
+                            crossAxisSpacing: 16,
+                            mainAxisSpacing: 16,
+                            childAspectRatio: 0.8,
                           ),
+                      itemCount: courses.length,
+                      itemBuilder: (context, index) {
+                        final course = courses[index];
+                        return AppCourseCard(
+                          title: course.title,
+                          subtitle: course.visibility,
+                          thumbnailUrl: course.thumbnailUrl,
+                          onTap: () =>
+                              context.push('/course-detail', extra: course),
                         );
                       },
                     );
                   }
-                  return const Center(child: CircularProgressIndicator());
+                  if (state is CourseFailure) {
+                    return AppErrorState(
+                      message: state.message,
+                      onRetry: () => context.read<CourseCubit>().loadCourses(),
+                    );
+                  }
+                  return const SizedBox.shrink();
                 },
               ),
             ],
@@ -211,23 +239,27 @@ class HomeScreen extends StatelessWidget {
       ),
     );
   }
+}
 
-  Widget _buildQuickStat(BuildContext context, String label, String value, IconData icon) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3),
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Column(
-          children: [
-            Icon(icon, size: 20, color: Theme.of(context).colorScheme.primary),
-            const SizedBox(height: 8),
-            Text(value, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
-            Text(label, style: Theme.of(context).textTheme.bodySmall),
-          ],
-        ),
+class _UserAvatar extends StatelessWidget {
+  final User? user;
+
+  const _UserAvatar({this.user});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final name = user?.fullName.trim() ?? '';
+    final initials = name.isNotEmpty
+        ? name.split(RegExp(r'\s+')).take(2).map((p) => p[0]).join().toUpperCase()
+        : '?';
+    return CircleAvatar(
+      radius: 18,
+      backgroundColor: colors.primaryContainer,
+      foregroundColor: colors.primary,
+      child: Text(
+        initials,
+        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
       ),
     );
   }
