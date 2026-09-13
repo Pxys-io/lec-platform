@@ -51,6 +51,10 @@ class Settings(BaseSettings):
     MUX_MAX_RESOLUTION_TIER: str = "1080p"
     MUX_PLAYBACK_POLICY: str = "public"
 
+    # Shared secret the main server must present on every /internal call.
+    # Empty = auth disabled (dev only); production must set a strong value.
+    INTERNAL_AUTH_TOKEN: str = ""
+
     class Config:
         env_file = ".env"
 

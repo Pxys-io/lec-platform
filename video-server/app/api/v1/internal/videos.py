@@ -28,9 +28,14 @@ from app.schemas.video import (
 from app.core.overlay_queue import get_overlay_queue, OverlayJob
 from app.core.cache import cache_get_or_compute, cache_set, cache_get, start_cache_cleanup_worker
 from app.core import storage
+from app.core.security import require_internal_token
 from fastapi.responses import RedirectResponse
 
-router = APIRouter(prefix="/internal/videos", tags=["internal"])
+router = APIRouter(
+    prefix="/internal/videos",
+    tags=["internal"],
+    dependencies=[Depends(require_internal_token)],
+)
 
 
 def get_upload_dir(upload_id: str) -> Path:

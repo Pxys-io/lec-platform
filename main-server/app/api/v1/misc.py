@@ -1044,7 +1044,8 @@ async def get_video_manifest_proxy(
 
     async with httpx.AsyncClient() as client:
         url = f"{settings.VIDEO_SERVER_INTERNAL_URL}/internal/videos/{lesson.video_id}/manifest"
-        r = await client.get(url)
+        headers = {"Authorization": f"Bearer {settings.VIDEO_SERVER_INTERNAL_TOKEN}"}
+        r = await client.get(url, headers=headers)
     if r.status_code != 200:
         raise HTTPException(status_code=r.status_code, detail="Video server error")
 
@@ -1110,7 +1111,8 @@ async def proxy_video_playlist(
     async with httpx.AsyncClient() as client:
         url = f"{settings.VIDEO_SERVER_INTERNAL_URL}/internal/videos/{lesson.video_id}/playlist/{resolution}"
         params = {"user_email": user.email, "user_phone": user.phone}
-        r = await client.get(url, params=params)
+        headers = {"Authorization": f"Bearer {settings.VIDEO_SERVER_INTERNAL_TOKEN}"}
+        r = await client.get(url, params=params, headers=headers)
 
         if r.status_code != 200:
             raise HTTPException(status_code=r.status_code, detail="Video server error")
@@ -1120,8 +1122,20 @@ async def proxy_video_playlist(
 
         content = r.text
         correct_base = settings.MAIN_SERVER_URL.rstrip("/") + "/api/v1/videos/proxy"
+        # Rewrite EVERY video-server origin (localhost dev + public prod base)
+        # to the authenticated main-server proxy so segment/key/watermark
+        # fetches always carry access control.
+        _vs_origins = "|".join(
+            re.escape(o.rstrip("/"))
+            for o in {
+                settings.VIDEO_SERVER_INTERNAL_URL,
+                settings.VIDEO_SERVER_BASE_URL,
+                "http://localhost:8001",
+            }
+            if o
+        )
         content = re.sub(
-            r"https?://(?:localhost|127\.0\.0\.1):8001(?:/api/v1)?/",
+            rf"https?://(?:{_vs_origins})/",
             correct_base + "/",
             content,
         )
@@ -1181,8 +1195,9 @@ async def proxy_video_server_content(
         params = dict(request.query_params)
         # Don't forward the token query param to video-server (it doesn't need it)
         params.pop("token", None)
+        headers = {"Authorization": f"Bearer {settings.VIDEO_SERVER_INTERNAL_TOKEN}"}
 
-        r = await client.get(url, params=params, timeout=120)
+        r = await client.get(url, params=params, headers=headers, timeout=120)
         media_type = r.headers.get("content-type", "video/mp2t")
         resp = Response(content=r.content, media_type=media_type, status_code=r.status_code)
         if r.status_code in (301, 302, 307, 308) and r.headers.get("location"):
