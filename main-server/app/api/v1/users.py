@@ -555,7 +555,7 @@ def get_my_courses(
 
     courses = []
     for course_id in course_ids:
-        course = db.get(course_id, course_id)
+        course = db.get(Course, course_id)
         if course:
             courses.append(course)
 
