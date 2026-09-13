@@ -1,7 +1,9 @@
 from contextlib import asynccontextmanager
+import os
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.core.config import settings
 from app.core.database import create_db_and_tables
@@ -30,6 +32,11 @@ app.add_middleware(
 )
 
 app.include_router(api_router, prefix="/api")
+
+# Serve uploaded files (materials, enrollment images) - /misc/upload writes
+# here, so without this mount every returned URL was a 404.
+os.makedirs("uploads", exist_ok=True)
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 
 @app.get("/")

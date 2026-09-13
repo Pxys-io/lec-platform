@@ -77,11 +77,10 @@ certificates_router = APIRouter(prefix="/certificates", tags=["certificates"])
 
 @misc_router.post("/upload")
 async def upload_file(
+    request: Request,
     file: UploadFile = File(...),
     user: User = Depends(get_current_user),
 ):
-    from app.core.config import settings
-
     # In a real app, upload to S3/R2. For now, save locally.
     upload_dir = "uploads"
     os.makedirs(upload_dir, exist_ok=True)
@@ -93,7 +92,10 @@ async def upload_file(
     with open(file_path, "wb") as buffer:
         buffer.write(await file.read())
 
-    return {"url": f"{settings.MAIN_SERVER_URL}/{file_path}"}
+    # Build the URL from the incoming request so it is correct regardless of
+    # MAIN_SERVER_URL config (dev localhost vs prod domain).
+    base = str(request.base_url).rstrip("/")
+    return {"url": f"{base}/{file_path}"}
 
 
 @misc_router.post("/handshake", response_model=AppHandshakeResponse)
