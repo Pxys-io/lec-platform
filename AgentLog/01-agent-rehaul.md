@@ -18,5 +18,13 @@ is frozen; the app conforms to it.
   preserved on branch `backup/local-pre-sync-20260914`.
 - Flutter toolchain verified: Flutter 3.38.2 / Dart 3.10.0 (matches
   pubspec SDK ^3.10.0).
+- Git plumbing: local `origin` repointed to the canonical repo
+  `github.com/Pxys-io/lec-platform.git` (was stale `lec.git`); local branch
+  renamed `master` → `main` to match upstream; `main` now tracks
+  `origin/main` and pushes cleanly. Pre-sync state preserved on
+  `backup/local-pre-sync-20260914`.
+- Repo hygiene: untracked 72 stray `.dart_tool/` build artifacts + committed
+  `agent/pubspec.lock` (per dashboard-v2/AGENTS.md convention); added
+  `agent/.dart_tool/`, `agent/pubspec.lock`, `.nvimlog` to root .gitignore.
 - Next: architecture audit (step 2) — map screens/cubits/repositories/models
   against main-server schemas; catalog contract mismatches and broken flows.
