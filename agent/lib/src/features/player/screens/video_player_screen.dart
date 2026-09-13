@@ -49,7 +49,6 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   bool _isAutoQuality = true;
   double _estimatedSpeedKbps = 0;
   String? _cacheDir;
-  List<double> _watermarkTimes = [];
   String? _loadError;
 
   bool _isDownloading = false;
@@ -364,13 +363,6 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
         videoUrl = playlistFile.path;
       }
 
-      _watermarkTimes = _parseWatermarkTimes(playlistContent);
-      if (_watermarkTimes.isNotEmpty) {
-        dev.log(
-          'Watermarked segments at: ${_watermarkTimes.map((t) => '${t.toStringAsFixed(1)}s').join(', ')}',
-        );
-      }
-
       final oldController = _videoPlayerController;
       final oldChewie = _chewieController;
 
@@ -631,31 +623,8 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     return Color(int.parse(hex, radix: 16));
   }
 
-  List<double> _parseWatermarkTimes(String playlist) {
-    try {
-      final line = playlist
-          .split('\n')
-          .firstWhere(
-            (l) => l.startsWith('# Watermarked segments:'),
-            orElse: () => '',
-          );
-      if (line.isEmpty) return [];
-      final valStr = line.split(': ').last;
-      return valStr.split(',').map((entry) {
-        final parts = entry.trim().split(':');
-        if (parts.length < 2) return 0.0;
-        final timePart = parts[1].split('+')[0].split('-')[0];
-        return double.tryParse(timePart.trim()) ?? 0.0;
-      }).toList();
-    } catch (_) {
-      return [];
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
-    const bool debugMode = false;
-
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
@@ -784,75 +753,6 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
               ),
             ),
 
-          if (debugMode && _manifest != null)
-            Positioned(
-              bottom: 80,
-              left: 20,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.red.withValues(alpha: 0.8),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(
-                          LucideIcons.shield,
-                          color: Colors.white,
-                          size: 14,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          'WATERMARK MODE: ${_manifest!.watermarkMode.toUpperCase()}',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                    if (_watermarkTimes.isNotEmpty) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        'SEGMENTS AT: ${_watermarkTimes.map((t) => '${t.toStringAsFixed(1)}s').join(', ')}',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 9,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ),
-
-          if (debugMode)
-            Positioned(
-              bottom: 60,
-              left: 20,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.red.withValues(alpha: 0.8),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(
-                  '${_estimatedSpeedKbps.toStringAsFixed(0)} kbps | ${_isAutoQuality ? "AUTO" : "MANUAL"} | $_currentResolution${_isLocal ? " (LOCAL)" : ""}',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ),
-
           if (_isDownloading)
             Positioned(
               bottom: 100,
@@ -874,38 +774,6 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
                     style: const TextStyle(color: Colors.white, fontSize: 12),
                   ),
                 ],
-              ),
-            ),
-
-          if (debugMode &&
-              _watermarkTimes.isNotEmpty &&
-              _videoPlayerController != null)
-            Positioned(
-              bottom: 55,
-              left: 0,
-              right: 0,
-              height: 4,
-              child: LayoutBuilder(
-                builder: (ctx, constraints) {
-                  final total =
-                      _videoPlayerController!.value.duration.inMilliseconds /
-                      1000.0;
-                  if (total <= 0) return const SizedBox();
-                  return Stack(
-                    children: _watermarkTimes.map((t) {
-                      final fraction = (t / total).clamp(0.0, 1.0);
-                      return Positioned(
-                        left: constraints.maxWidth * fraction,
-                        top: 0,
-                        child: Container(
-                          width: 3,
-                          height: 4,
-                          color: Colors.yellow,
-                        ),
-                      );
-                    }).toList(),
-                  );
-                },
               ),
             ),
         ],

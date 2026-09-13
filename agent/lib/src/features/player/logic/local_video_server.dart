@@ -32,7 +32,6 @@ class LocalVideoServer {
 
   String _serverMode = 'hybrid';
   String _mismatchAction = 'warn';
-  String _downloadPolicy = 'allow';
 
   Future<void> start(
     String downloadPath, {
@@ -45,7 +44,6 @@ class LocalVideoServer {
     _downloadPath = downloadPath;
     _serverMode = serverMode;
     _mismatchAction = mismatchAction;
-    _downloadPolicy = downloadPolicy;
     _authToken = _generateRandomToken();
     _blockReason = null;
 
