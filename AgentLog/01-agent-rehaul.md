@@ -81,6 +81,24 @@ is frozen; the app conforms to it.
     removed unreachable OTP screen (no backend), cleaned dead debug overlays
     in player + unused test import.
   - Analyzer: 93 → 78 issues, 0 errors.
-- Next: finish step 8 (course detail typing, quiz session, comments/chat
-  pass), then step 9 flow fixes (auth edge cases, locks, quiz), then step 10
-  verification (analyze/test/build + smoke).
+  - Follow-ups: course-detail lesson helpers typed (`Lesson`/`List<Lesson>`)
+    — surfaced and fixed real null-safety bugs; register screen now sends
+    backend fields (first/last name, phone) — the full_name/institution/
+    specialty fields were silently dropped by the backend so names were lost;
+    profile "Admin Dashboard" entry restricted to admin/super_admin;
+    onboarding copy rebranded. Analyzer now 77 issues, 0 errors.
+- **Step 10 — verification (in progress).**
+  - `flutter analyze`: 77 issues (baseline 93), **0 errors**, 0 warnings in
+    app code (remaining are info-level lints in tests + a couple of dead-code
+    leftovers already removed).
+  - `flutter build apk --debug`: **success** (Gradle assembleDebug).
+  - `flutter test test/backend_test.dart` against a locally-seeded main
+    server: **6/6 passed** (register/login/courses/lessons/quiz/video/logout;
+    quiz+video sub-tests skip when the seeded lesson has none attached —
+    expected).
+  - `e2e_video_test.dart`: requires `setup.sh --local` full orchestration
+    (video server :9001 + cloudflared + fresh DBs); fails in this sandbox
+    because the video server won't boot here — pre-existing environment
+    limitation, not a rehaul regression.
+  - Release APK build running as final CI-equivalent check.
+- Next: mark DONE once release build passes; final report.

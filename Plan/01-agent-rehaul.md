@@ -1,6 +1,6 @@
 # Plan 01 — Agent (Flutter) rehaul: UX, bugs, architecture + MUX playback compatibility
 
-Status: **ACTIVE**
+Status: **ACTIVE** (steps 1–9 done; step 10 verification in progress)
 
 Scope: `agent/` (Flutter app) only. The app "sucks" for three reasons the
 user named: UI/UX is ugly/clunky, flows are buggy, architecture is messy.
