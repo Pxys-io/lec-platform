@@ -1,7 +1,9 @@
 import json
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
+from fastapi.security import HTTPBearer
+from typing import Optional
 from sqlmodel import Session, select, func
 
 from app.core.database import get_db
@@ -41,6 +43,39 @@ def require_admin(user: User = Depends(get_current_user)):
 
 
 def require_instructor(user: User = Depends(get_current_user)):
+    if user.role not in [UserRole.INSTRUCTOR, UserRole.ADMIN, UserRole.SUPER_ADMIN]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Instructor access required"
+        )
+    return user
+
+
+# Flexible auth for HLS playlist endpoints: native players (Safari AVPlayer,
+# ExoPlayer, mobile WebViews) cannot set an Authorization header on the
+# playlist or the AES-128 key fetches, so they pass ?token=<jwt> instead.
+# Header auth keeps working exactly as before.
+def get_current_user_flexible(
+    request_token: Optional[str] = Query(None, alias="token"),
+    credentials=Depends(HTTPBearer(auto_error=False)),
+    db: Session = Depends(get_db),
+) -> User:
+    from app.core.security import decode_token as _decode
+
+    raw = credentials.credentials if credentials else request_token
+    if not raw:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated"
+        )
+    payload = _decode(raw)
+    user = db.get(User, payload.get("sub"))
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
+        )
+    return user
+
+
+def require_instructor_flexible(user: User = Depends(get_current_user_flexible)):
     if user.role not in [UserRole.INSTRUCTOR, UserRole.ADMIN, UserRole.SUPER_ADMIN]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Instructor access required"

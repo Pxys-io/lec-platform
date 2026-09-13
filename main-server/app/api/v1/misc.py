@@ -60,6 +60,7 @@ from app.schemas import (
     VideoModePolicyResponse,
 )
 from app.api.v1.users import get_current_user, require_instructor
+from app.api.v1.users import get_current_user_flexible, require_instructor_flexible
 import hashlib
 from sqlmodel import func
 
@@ -1085,8 +1086,9 @@ async def get_video_manifest_proxy(
 async def proxy_video_playlist(
     lesson_id: str,
     resolution: str,
+    request: Request,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_user_flexible),
 ):
     lesson = db.get(Lesson, lesson_id)
     if not lesson or not lesson.video_id:
@@ -1123,6 +1125,17 @@ async def proxy_video_playlist(
             correct_base + "/",
             content,
         )
+        # Native players (Safari AVPlayer) authenticate via ?token= instead of
+        # headers, so the AES-128 key / watermark URLs inside the playlist must
+        # carry it - otherwise key fetches 401. Only when the caller itself
+        # used ?token= (hls.js callers use headers and are unaffected).
+        _qtok = request.query_params.get("token")
+        if _qtok:
+            content = re.sub(
+                r'((?:URI=")?' + re.escape(correct_base) + r"/[^\"\s]*)",
+                lambda m: m.group(1) + ("&" if "?" in m.group(1) else "?") + f"token={_qtok}",
+                content,
+            )
 
         return PlainTextResponse(
             content=content, media_type="application/vnd.apple.mpegurl"
@@ -1960,8 +1973,9 @@ async def proxy_raw_video(
 async def get_manage_video_playlist(
     video_id: str,
     resolution: str,
+    request: Request,
     db: Session = Depends(get_db),
-    user: User = Depends(require_instructor),
+    user: User = Depends(require_instructor_flexible),
 ):
     from app.core.config import settings
     import httpx
@@ -2018,6 +2032,14 @@ async def get_manage_video_playlist(
         correct_base + "/",
         content,
     )
+    # Same ?token= passthrough as the student playlist endpoint (Safari preview).
+    _qtok = request.query_params.get("token")
+    if _qtok:
+        content = re.sub(
+            r'((?:URI=")?' + re.escape(correct_base) + r"/[^\"\s]*)",
+            lambda m: m.group(1) + ("&" if "?" in m.group(1) else "?") + f"token={_qtok}",
+            content,
+        )
 
     return PlainTextResponse(
         content=content, media_type="application/vnd.apple.mpegurl"

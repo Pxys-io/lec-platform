@@ -8,6 +8,7 @@ class VideoResolution {
   final String? playlistUrl;
   final int segmentsCount;
   final int totalSizeBytes;
+  final double? targetDuration;
   final String status;
   final DateTime createdAt;
 
@@ -21,6 +22,7 @@ class VideoResolution {
     this.playlistUrl,
     required this.segmentsCount,
     required this.totalSizeBytes,
+    this.targetDuration,
     required this.status,
     required this.createdAt,
   });
@@ -36,6 +38,7 @@ class VideoResolution {
       playlistUrl: json['playlist_url'],
       segmentsCount: json['segments_count'],
       totalSizeBytes: json['total_size_bytes'],
+      targetDuration: (json['target_duration'] as num?)?.toDouble(),
       status: json['status'],
       createdAt: DateTime.parse(json['created_at']),
     );
@@ -52,6 +55,7 @@ class VideoResolution {
       'playlist_url': playlistUrl,
       'segments_count': segmentsCount,
       'total_size_bytes': totalSizeBytes,
+      'target_duration': targetDuration,
       'status': status,
       'created_at': createdAt.toIso8601String(),
     };

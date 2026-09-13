@@ -37,6 +37,49 @@ def get_upload_dir(upload_id: str) -> Path:
     return Path(settings.VIDEO_STORAGE_PATH) / "uploads" / upload_id
 
 
+def _resolve_local_segment(path_str) -> Optional[Path]:
+    """Resolve a locally-stored segment file. Older rows store the path
+    relative to the videos dir (missing the storage/videos/ prefix), so try
+    both the stored path and the storage-rooted one."""
+    if not path_str:
+        return None
+    p = Path(path_str)
+    try:
+        if p.exists() and p.stat().st_size > 0:
+            return p
+    except Exception:
+        pass
+    try:
+        q = Path(settings.VIDEO_STORAGE_PATH) / path_str
+        if q.exists() and q.stat().st_size > 0:
+            return q
+    except Exception:
+        pass
+    return None
+
+
+def _origin_container(video_id: str, resolution: str) -> str:
+    """Source container of a rendition: 'fmp4' for MUX variants (init.mp4
+    present) or 'ts' for locally-transcoded variants. Watermark segments must
+    be generated in the same container, otherwise the playlist mixes fMP4 and
+    MPEG-TS across discontinuities and strict players stall."""
+    init_key = storage.segment_key(video_id, resolution, "init.mp4")
+    try:
+        if storage.r2_enabled() and storage.object_exists(init_key):
+            return "fmp4"
+    except Exception:
+        pass
+    try:
+        local_init = (
+            Path(settings.VIDEO_STORAGE_PATH) / "videos" / video_id / resolution / "init.mp4"
+        )
+        if local_init.exists() and local_init.stat().st_size > 0:
+            return "fmp4"
+    except Exception:
+        pass
+    return "ts"
+
+
 def _compute_watermark_positions(video, segments, user_email):
     import random
     seed_str = f"{video.id}-{user_email or 'anon'}"
@@ -446,6 +489,7 @@ def get_video(
                 playlist_url=r.playlist_url,
                 segments_count=r.segments_count,
                 total_size_bytes=r.total_size_bytes,
+                target_duration=r.target_duration,
                 status=r.status,
                 created_at=r.created_at,
             )
@@ -692,6 +736,7 @@ def get_video_manifest(
                 playlist_url=r.playlist_url,
                 segments_count=r.segments_count,
                 total_size_bytes=r.total_size_bytes,
+                target_duration=r.target_duration,
                 status=r.status,
                 created_at=r.created_at,
             )
@@ -815,10 +860,13 @@ def get_playlist(
 
     base_url = settings.VIDEO_SERVER_BASE_URL
     proxy_base = settings.playlist_proxy_base
+    # fMP4 (EXT-X-MAP) requires VERSION >= 5; fragmented MP4 VOD requires 7.
+    # The original playlist assumed MPEG-TS (VERSION 3) - MUX produces fMP4.
     playlist_lines = [
         "#EXTM3U",
-        "#EXT-X-VERSION:3",
-        "#EXT-X-TARGETDURATION:60",
+        "#EXT-X-VERSION:7",
+        "#EXT-X-PLAYLIST-TYPE:VOD",
+        "#EXT-X-INDEPENDENT-SEGMENTS",
         f"#EXT-X-MEDIA-SEQUENCE:0",
     ]
 
@@ -863,20 +911,23 @@ def get_playlist(
     else:
         eff_break = video.watermark_break_duration
 
-    if settings.VIDEO_SERVER_DEBUG:
-        cum_time = 0.0
-        mark_entries = []
-        mode = video.watermark_mode
-        for i, seg in enumerate(segments):
-            if i in mark_indices and video.watermark_enabled:
-                if mode == "insert":
-                    dur = eff_break * video.watermark_insert_repeat
-                    mark_entries.append(f"insert:{cum_time:.3f}+{dur:.3f}s")
-                else:
-                    end = cum_time + seg.duration_seconds
-                    mark_entries.append(f"overlay:{cum_time:.3f}-{end:.3f}")
-            cum_time += seg.duration_seconds
-        playlist_lines.append(f"# Watermarked segments: {','.join(mark_entries)}")
+    # TARGETDURATION comes from stored rendition metadata (written at
+    # transcode time), not from scanning segments per request. Inserted break
+    # screens can exceed the content max, so take the max of both. A NULL
+    # value (rows predating the column) is backfilled once and persisted.
+    import math as _math
+    if res.target_duration is None:
+        _heal = max([s.duration_seconds for s in segments], default=1.0)
+        res.target_duration = max(1, _math.ceil(_heal))
+        db.add(res)
+        db.commit()
+    _content_target = int(res.target_duration)
+    if mark_indices and video.watermark_enabled and video.watermark_mode == "insert":
+        _target = max(_content_target, max(1, _math.ceil(float(eff_break))))
+    else:
+        # No break screens are actually listed - serve the tight stored value.
+        _target = _content_target
+    playlist_lines.append(f"#EXT-X-TARGETDURATION:{_target}")
 
     # Enqueue overlay pre-generation jobs (priority by watermark index)
     if video.watermark_enabled and video.watermark_mode == "overlay" and mark_indices:
@@ -906,9 +957,9 @@ def get_playlist(
     prev_was_watermark = False
 
     # fMP4 fragments need their init segment declared BEFORE each fMP4 run.
-    # Maps are emitted lazily: only right before an actual fMP4 segment, and
-    # re-emitted after a TS watermark segment (overlay/break) - a map followed
-    # by a TS segment breaks strict demuxers (ffmpeg) and confuses players.
+    # Maps are emitted lazily: only right before an actual fMP4 content segment,
+    # and re-emitted after a watermark segment (overlay/break) - a map followed
+    # by a segment from another init breaks strict demuxers (ffmpeg) and players.
     init_key = f"videos/{video_id}/{resolution}/init.mp4"
     has_fmp4_map = (
         video.storage_type == "r2"
@@ -928,6 +979,12 @@ def get_playlist(
             playlist_lines.append(f'#EXT-X-MAP:URI="{storage.public_url(init_key)}"')
         active_map = "main"
 
+    # Watermark (overlay / break-screen) segments are generated in the origin
+    # container: MUX variants are fMP4, locally-transcoded variants are
+    # MPEG-TS. The URL suffix advertises the actual bytes served.
+    wm_container = "fmp4" if has_fmp4_map else "ts"
+    wm_suffix = "mp4" if wm_container == "fmp4" else "ts"
+
     for i, seg in enumerate(segments):
         is_marked = i in mark_indices and video.watermark_enabled
 
@@ -935,14 +992,14 @@ def get_playlist(
             if i > 0:
                 playlist_lines.append("#EXT-X-DISCONTINUITY")
             break_file_hash = hashlib.md5(
-                f"break_{res.id}_{user_info_b64}_{eff_break}".encode()
+                f"break_{res.id}_{user_info_b64}_{eff_break}_{wm_container}".encode()
             ).hexdigest()
             for _ in range(video.watermark_insert_repeat):
                 if key_url:
                     playlist_lines.append(_key_line(f"break:{break_file_hash}"))
                 playlist_lines.append(f"#EXTINF:{eff_break:.3f},")
                 playlist_lines.append(
-                    f"{proxy_base}/internal/videos/watermark/{res.id}/{user_info_b64}/{eff_break}.ts"
+                    f"{proxy_base}/internal/videos/watermark/{res.id}/{user_info_b64}/{eff_break}.{wm_suffix}"
                 )
             prev_was_watermark = True
             active_map = None
@@ -953,14 +1010,14 @@ def get_playlist(
 
         if is_marked and video.watermark_mode == "overlay":
             overlay_file_hash = hashlib.md5(
-                f"overlay_{seg.segment_hash}_{user_info_b64}".encode()
+                f"overlay_{seg.segment_hash}_{user_info_b64}_{wm_container}".encode()
             ).hexdigest()
             playlist_lines.append("#EXT-X-DISCONTINUITY")
             if key_url:
                 playlist_lines.append(_key_line(f"overlay:{overlay_file_hash}"))
             playlist_lines.append(f"#EXTINF:{seg.duration_seconds:.3f},")
             playlist_lines.append(
-                f"{proxy_base}/internal/videos/{video_id}/overlay/{seg.segment_hash}/{user_info_b64}.ts"
+                f"{proxy_base}/internal/videos/{video_id}/overlay/{seg.segment_hash}/{user_info_b64}.{wm_suffix}"
             )
             active_map = None
         else:
@@ -980,6 +1037,8 @@ def get_playlist(
 
 
 @router.get("/{video_id}/overlay/{segment_hash}/{info_b64}.ts")
+@router.get("/{video_id}/overlay/{segment_hash}/{info_b64}.mp4")
+@router.get("/{video_id}/overlay/{segment_hash}/{info_b64}.m4s")
 def get_overlay_segment(
     video_id: str,
     segment_hash: str,
@@ -1006,9 +1065,15 @@ def get_overlay_segment(
 
     res = db.get(VideoResolution, seg.resolution_id)
 
-    cache_key = f"overlay_{segment_hash}_{info_b64}"
+    # Origin container decides the output: MUX variants get fragmented MP4,
+    # locally-transcoded variants get MPEG-TS - never mix them in one playlist.
+    container = _origin_container(video.id, res.resolution)
+    wm_ext = "mp4" if container == "fmp4" else "ts"
+    wm_media = "video/mp4" if container == "fmp4" else "video/mp2t"
+
+    cache_key = f"overlay_{segment_hash}_{info_b64}_{container}"
     file_hash = hashlib.md5(cache_key.encode()).hexdigest()
-    r2_key = storage.overlay_key(file_hash)
+    r2_key = storage.overlay_key(file_hash, container)
 
     if settings.R2_PUBLIC_DOMAIN and storage.r2_enabled():
         if storage.object_exists(r2_key):
@@ -1017,7 +1082,7 @@ def get_overlay_segment(
     temp_dir = Path(settings.CACHE_STORAGE_PATH) / "overlays"
     temp_dir.mkdir(parents=True, exist_ok=True)
 
-    overlay_file = temp_dir / f"{file_hash}.mp4"
+    overlay_file = temp_dir / f"{file_hash}.{wm_ext}"
     generated_now = False
 
     if not overlay_file.exists():
@@ -1050,7 +1115,9 @@ def get_overlay_segment(
                 video.encryption_key_hex,
             )
         else:
-            source = Path(seg.storage_path)
+            source = _resolve_local_segment(seg.storage_path)
+            if source is None:
+                raise HTTPException(status_code=404, detail="Source segment file not found")
 
         cmd = [
             "ffmpeg",
@@ -1061,12 +1128,18 @@ def get_overlay_segment(
             "-map", "0:a:0?",
             "-c:v", "libx264", "-profile:v", "high",
             "-pix_fmt", "yuv420p",
-            "-c:a", "copy",
-            "-f", "mp4",
-            "-movflags", "frag_keyframe+empty_moov+default_base_moof+faststart",
-            str(overlay_file),
-            "-y",
+            # Re-encode AAC (never copy): guarantees the audio track survives
+            # the discontinuity even if the source had none.
+            "-c:a", "aac", "-b:a", "128k",
         ]
+        if container == "fmp4":
+            cmd.extend([
+                "-f", "mp4",
+                "-movflags", "frag_keyframe+empty_moov+default_base_moof+faststart",
+            ])
+        else:
+            cmd.extend(["-f", "mpegts"])
+        cmd.extend([str(overlay_file), "-y"])
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
             print(f"Overlay ffmpeg error: {result.stderr[-500:]}")
@@ -1080,7 +1153,7 @@ def get_overlay_segment(
 
     if storage.r2_enabled():
         try:
-            storage.upload_file(r2_key, str(overlay_file), content_type="video/mp4")
+            storage.upload_file(r2_key, str(overlay_file), content_type=wm_media)
         except Exception as e:
             print(f"R2 overlay upload error: {e}")
 
@@ -1090,10 +1163,12 @@ def get_overlay_segment(
         return RedirectResponse(storage.public_url(r2_key), status_code=307)
 
     from fastapi.responses import FileResponse
-    return FileResponse(str(overlay_file), media_type="video/mp4")
+    return FileResponse(str(overlay_file), media_type=wm_media)
 
 
 @router.get("/watermark/{resolution_id}/{info_b64}/{break_dur}.ts")
+@router.get("/watermark/{resolution_id}/{info_b64}/{break_dur}.mp4")
+@router.get("/watermark/{resolution_id}/{info_b64}/{break_dur}.m4s")
 def get_dynamic_watermark_segment(
     resolution_id: str,
     info_b64: str,
@@ -1117,9 +1192,13 @@ def get_dynamic_watermark_segment(
         break_dur = video.watermark_break_duration if video else settings.WATERMARK_BREAK_DURATION
 
     user_name = user_info.split("|")[0] if "|" in user_info else user_info
-    cache_key = f"break_{resolution_id}_{info_b64}_{break_dur}"
+    # Same origin-container rule as overlay segments: MUX -> fMP4, local -> TS.
+    container = _origin_container(video.id, res.resolution) if video else "fmp4"
+    wm_ext = "mp4" if container == "fmp4" else "ts"
+    wm_media = "video/mp4" if container == "fmp4" else "video/mp2t"
+    cache_key = f"break_{resolution_id}_{info_b64}_{break_dur}_{container}"
     file_hash = hashlib.md5(cache_key.encode()).hexdigest()
-    r2_key = storage.break_screen_key(file_hash)
+    r2_key = storage.break_screen_key(file_hash, container)
 
     if settings.R2_PUBLIC_DOMAIN and storage.r2_enabled():
         if storage.object_exists(r2_key):
@@ -1128,11 +1207,11 @@ def get_dynamic_watermark_segment(
     cached = cache_get(db, cache_key, "break_screen")
     if cached and cached.file_path and os.path.exists(cached.file_path):
         from fastapi.responses import FileResponse
-        return FileResponse(cached.file_path, media_type="video/mp2t")
+        return FileResponse(cached.file_path, media_type=wm_media)
 
     break_dir = Path(settings.CACHE_STORAGE_PATH) / "break_screens"
     break_dir.mkdir(parents=True, exist_ok=True)
-    break_file = break_dir / f"{file_hash}.mp4"
+    break_file = break_dir / f"{file_hash}.{wm_ext}"
     generated_now = False
 
     if not break_file.exists():
@@ -1172,43 +1251,79 @@ def get_dynamic_watermark_segment(
             f"x=(w-text_w)/2:y=h/2+80"
         )
 
+        # All inputs first, then all output options: ffmpeg rejects output
+        # options (like -vf/-c:v) placed between two -i inputs.
         cmd = [
             "ffmpeg", "-y",
             "-f", "lavfi",
             "-i", f"color=c=darkblue:s={res.width}x{res.height}:d={break_dur}:r=30",
+        ]
+
+        if tts_wav and tts_wav.exists():
+            cmd.extend(["-i", str(tts_wav)])
+        else:
+            # Content segments carry AAC audio - a video-only break screen
+            # across a DISCONTINUITY stalls players (audio track vanishes).
+            # Always mux an AAC track of matching duration instead.
+            cmd.extend([
+                "-f", "lavfi",
+                "-i", f"anullsrc=r=48000:cl=stereo:d={break_dur}",
+            ])
+
+        cmd.extend([
             "-vf", vf,
+            "-map", "0:v:0", "-map", "1:a:0",
             "-c:v", "libx264", "-profile:v", "high", "-preset", "fast", "-crf", "23",
             "-pix_fmt", "yuv420p",
             "-r", "30",
             "-g", "30",
             "-keyint_min", "30",
             "-sc_threshold", "0",
-            "-f", "mp4",
-            "-movflags", "frag_keyframe+empty_moov+default_base_moof+faststart",
-        ]
+            "-c:a", "aac", "-b:a", "128k",
+        ])
 
         if tts_wav and tts_wav.exists():
-            cmd.extend(["-i", str(tts_wav)])
-            cmd.extend(["-c:a", "aac", "-b:a", "128k", "-shortest"])
+            # apad pads the short TTS voiceover with silence to the full break
+            # duration (bare -shortest would truncate the video to ~4s of audio).
+            cmd.extend(["-af", "apad"])
+        cmd.extend(["-shortest"])
+
+        if container == "fmp4":
+            cmd.extend([
+                "-f", "mp4",
+                "-movflags", "frag_keyframe+empty_moov+default_base_moof+faststart",
+            ])
+        else:
+            cmd.extend(["-f", "mpegts"])
 
         cmd.append(str(break_file))
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0 or not break_file.exists():
             print(f"Break screen ffmpeg error: {result.stderr[-300:]}")
-            fallback = break_dir / f"fallback_{res.width}x{res.height}.mp4"
+            fallback = break_dir / f"fallback_{res.width}x{res.height}.{wm_ext}"
             if not fallback.exists():
-                subprocess.run([
+                _fb_cmd = [
                     "ffmpeg", "-y",
                     "-f", "lavfi",
                     "-i", f"color=c=darkblue:s={res.width}x{res.height}:d={break_dur}:r=30",
+                    "-f", "lavfi",
+                    "-i", f"anullsrc=r=48000:cl=stereo:d={break_dur}",
+                    "-map", "0:v:0", "-map", "1:a:0",
                     "-c:v", "libx264", "-profile:v", "high", "-preset", "ultrafast", "-crf", "28",
                     "-pix_fmt", "yuv420p",
+                    "-c:a", "aac", "-b:a", "128k", "-shortest",
                     "-r", "30",
                     "-g", "30",
-                    "-f", "mp4",
-                    "-movflags", "frag_keyframe+empty_moov+default_base_moof+faststart",
-                    str(fallback),
-                ], capture_output=True)
+                ]
+                if container == "fmp4":
+                    _fb_cmd.extend([
+                        "-f", "mp4",
+                        "-movflags", "frag_keyframe+empty_moov+default_base_moof+faststart",
+                    ])
+                else:
+                    _fb_cmd.extend(["-f", "mpegts"])
+                _fb_cmd.append(str(fallback))
+                subprocess.run(_fb_cmd, capture_output=True)
             if fallback.exists():
                 import shutil as _su
                 _su.copy(fallback, break_file)
@@ -1220,7 +1335,7 @@ def get_dynamic_watermark_segment(
 
     if storage.r2_enabled() and break_file.exists():
         try:
-            storage.upload_file(r2_key, str(break_file), content_type="video/mp4")
+            storage.upload_file(r2_key, str(break_file), content_type=wm_media)
         except Exception as e:
             print(f"R2 break screen upload error: {e}")
 
@@ -1230,7 +1345,7 @@ def get_dynamic_watermark_segment(
         return RedirectResponse(storage.public_url(r2_key), status_code=307)
 
     from fastapi.responses import FileResponse
-    return FileResponse(str(break_file), media_type="video/mp4")
+    return FileResponse(str(break_file), media_type=wm_media)
 
 
 @router.get("/{video_id}/key")
@@ -1263,6 +1378,14 @@ def get_segment(
             storage.public_url(seg.storage_path), status_code=307
         )
 
+    # MIME follows the origin container (MUX fMP4 vs local TS), not the .ts name.
+    _seg_res = db.get(VideoResolution, seg.resolution_id)
+    _seg_media = (
+        "video/mp4"
+        if _seg_res and _origin_container(video_id, _seg_res.resolution) == "fmp4"
+        else "video/mp2t"
+    )
+
     if seg.storage_type == "r2":
         key = seg.storage_path
         video = db.get(Video, video_id)
@@ -1281,25 +1404,25 @@ def get_segment(
 
         return StreamingResponse(
             _stream_r2(),
-            media_type="video/mp2t",
+            media_type=_seg_media,
             headers={"Content-Disposition": f"inline; filename={seg.filename}"},
         )
 
-    seg_path = seg.storage_path
-    if not seg_path or not os.path.exists(seg_path):
+    seg_path = _resolve_local_segment(seg.storage_path)
+    if seg_path is None:
         raise HTTPException(status_code=404, detail="Segment file not found")
 
     video = db.get(Video, video_id)
     if video and video.is_encrypted:
-        enc_path = seg_path + ".enc"
+        enc_path = str(seg_path) + ".enc"
         if os.path.exists(enc_path):
-            seg_path = enc_path
+            seg_path = Path(enc_path)
 
     from fastapi.responses import FileResponse
 
     return FileResponse(
         seg_path,
-        media_type="video/mp2t",
+        media_type=_seg_media,
         headers={"Content-Disposition": f"inline; filename={seg.filename}"},
     )
 

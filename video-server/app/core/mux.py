@@ -313,6 +313,13 @@ def mux_transcode(video_id: str):
             variant_content = _download_m3u8(variant["uri"])
             segment_entries, map_uri = _parse_variant_playlist(variant_content, f"https://stream.mux.com/")
 
+            # Persist the rendition's TARGETDURATION metadata now, from the
+            # source MUX variant playlist - playlist serving reads this stored
+            # value instead of scanning segments on every request.
+            import math as _math
+            _max_entry = max([e["duration"] for e in segment_entries], default=1.0)
+            _target = max(1, _math.ceil(_max_entry))
+
             res_path = temp_base / res_name
             res_path.mkdir(exist_ok=True)
 
@@ -342,6 +349,7 @@ def mux_transcode(video_id: str):
                 bitrate=bitrate,
                 segments_count=len(segment_entries),
                 total_size_bytes=0,
+                target_duration=_target,
                 status="ready",
             )
             db.add(res_record)
@@ -372,7 +380,9 @@ def mux_transcode(video_id: str):
                         upload_path = enc_path
 
                 r2_key = storage.segment_key(video.id, res_name, hash_filename)
-                storage.upload_file(r2_key, str(upload_path), content_type="video/mp2t")
+                # MUX serves fMP4 fragments - label them as MP4, not MPEG-TS,
+                # so R2/CDN MIME types don't confuse strict players/Safari.
+                storage.upload_file(r2_key, str(upload_path), content_type="video/mp4")
 
                 seg = VideoSegment(
                     video_id=video.id,

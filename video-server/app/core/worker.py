@@ -192,6 +192,19 @@ class TranscodeWorker:
 
             # Create DB records for resolution and segments
             segments = sorted(res_path.glob("segment_*.ts"))
+            import math as _math
+            import re as _re
+            # Read true per-segment durations from the ffmpeg-written playlist
+            # instead of guessing -hls_time for every segment (the tail segment
+            # is almost always shorter). This is the stored duration metadata.
+            _extinf = []
+            _mpl = res_path / "playlist.m3u8"
+            if _mpl.exists():
+                for _line in _mpl.read_text().splitlines():
+                    _m = _re.match(r"#EXTINF:\s*([\d.]+)", _line.strip())
+                    if _m:
+                        _extinf.append(float(_m.group(1)))
+            _target = max(1, _math.ceil(max(_extinf, default=60.0)))
             res_record = VideoResolution(
                 video_id=video.id,
                 resolution=res_name,
@@ -200,6 +213,7 @@ class TranscodeWorker:
                 bitrate=int(config["bitrate"].replace("k", "000")),
                 segments_count=len(segments),
                 total_size_bytes=sum(s.stat().st_size for s in segments),
+                target_duration=_target,
                 status="ready",
             )
             db.add(res_record)
@@ -207,8 +221,9 @@ class TranscodeWorker:
             db.refresh(res_record)
 
             for i, seg_file in enumerate(segments):
-                # Simple duration estimation if ffprobe fails
-                seg_duration = 60.0 # Default based on hls_time
+                # Stored duration metadata: true EXTINF value when available,
+                # otherwise the -hls_time fallback.
+                seg_duration = _extinf[i] if i < len(_extinf) else 60.0
                 
                 seg = VideoSegment(
                     video_id=video.id,

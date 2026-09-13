@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 import 'encryption_helper.dart';
+import 'video_downloader.dart' show kOfflineFormat;
 
 class ModeMismatchException implements Exception {
   final String message;
@@ -73,7 +74,11 @@ class LocalVideoServer {
         if (path.startsWith('/playlist/')) {
           await _handlePlaylist(request);
         }
-        // 3. Route: Segments
+        // 3. Route: fMP4 init segments (EXT-X-MAP, MUX renditions)
+        else if (path.startsWith('/init/')) {
+          await _handleInit(request);
+        }
+        // 4. Route: Segments
         else if (path.startsWith('/segments/')) {
           await _handleSegment(request);
         } else {
@@ -154,6 +159,19 @@ class LocalVideoServer {
       return 'http://localhost:${_server!.port}/segments/$lessonId/$resolution/${match.group(0)}';
     });
 
+    // Offline layouts: legacy app-encrypted (segment_N.ts) and the current
+    // clear layout (seg_N.m4s for fMP4/MUX, seg_N.ts for MPEG-TS, init_N.mp4
+    // for EXT-X-MAP). Rewrite every local media/init reference to localhost.
+    content = content.replaceAllMapped(
+      RegExp(r'(seg_\d+\.(?:m4s|ts))'),
+      (match) {
+        return 'http://localhost:${_server!.port}/segments/$lessonId/$resolution/${match.group(1)}';
+      },
+    );
+    content = content.replaceAllMapped(RegExp(r'(init_\d+\.mp4)'), (match) {
+      return 'http://localhost:${_server!.port}/init/$lessonId/$resolution/${match.group(1)}';
+    });
+
     if (downloadMode != null && downloadMode != serverMode) {
       content = content.replaceFirst(
         '#EXTM3U',
@@ -165,6 +183,70 @@ class LocalVideoServer {
       ..headers.contentType = ContentType('application', 'x-mpegURL')
       ..write(content)
       ..close();
+  }
+
+  Future<bool> _isClearFormat(String lessonId, String resolution) async {
+    final fmtFile = File('$_downloadPath/$lessonId/$resolution/.fmt');
+    if (!await fmtFile.exists()) return false;
+    return (await fmtFile.readAsString()).trim() == kOfflineFormat;
+  }
+
+  ContentType _contentTypeFor(String fileName) {
+    if (fileName.endsWith('.m4s') || fileName.endsWith('.mp4')) {
+      return ContentType('video', 'mp4'); // fMP4 fragments + init (MUX)
+    }
+    return ContentType('video', 'MP2T'); // MPEG-TS (local ffmpeg)
+  }
+
+  Future<void> _serveFile(
+    HttpRequest request,
+    String cacheKey,
+    String filePath, {
+    required bool clear,
+  }) async {
+    final data = await File(filePath).readAsBytes();
+    final Uint8List out;
+    if (clear) {
+      out = data;
+    } else {
+      out = EncryptionHelper.decrypt(Uint8List.fromList(data));
+    }
+    _segmentCache[cacheKey] = out;
+    request.response
+      ..headers.contentType = _contentTypeFor(filePath)
+      ..add(out)
+      ..close();
+  }
+
+  Future<void> _handleInit(HttpRequest request) async {
+    final parts =
+        request.uri.pathSegments; // init, lessonId, resolution, fileName
+    if (parts.length < 4) {
+      request.response
+        ..statusCode = HttpStatus.badRequest
+        ..close();
+      return;
+    }
+
+    final cacheKey = parts.skip(1).join('/'); // lessonId/resolution/fileName
+    if (_segmentCache.containsKey(cacheKey)) {
+      request.response
+        ..headers.contentType = ContentType('video', 'mp4')
+        ..add(_segmentCache[cacheKey]!)
+        ..close();
+      return;
+    }
+
+    final initFile = File('$_downloadPath/$cacheKey');
+    if (!await initFile.exists()) {
+      request.response
+        ..statusCode = HttpStatus.notFound
+        ..close();
+      return;
+    }
+
+    final clear = await _isClearFormat(parts[1], parts[2]);
+    await _serveFile(request, cacheKey, initFile.path, clear: clear);
   }
 
   Future<void> _handleSegment(HttpRequest request) async {
@@ -181,7 +263,7 @@ class LocalVideoServer {
 
     if (_segmentCache.containsKey(cacheKey)) {
       request.response
-        ..headers.contentType = ContentType('video', 'MP2T')
+        ..headers.contentType = _contentTypeFor(parts.last)
         ..add(_segmentCache[cacheKey]!)
         ..close();
       return;
@@ -195,18 +277,8 @@ class LocalVideoServer {
       return;
     }
 
-    final encryptedData = await segmentFile.readAsBytes();
-    final decryptedData = EncryptionHelper.decrypt(
-      Uint8List.fromList(encryptedData),
-    );
-
-    // Save in memory
-    _segmentCache[cacheKey] = decryptedData;
-
-    request.response
-      ..headers.contentType = ContentType('video', 'MP2T')
-      ..add(decryptedData)
-      ..close();
+    final clear = await _isClearFormat(parts[1], parts[2]);
+    await _serveFile(request, cacheKey, segmentFile.path, clear: clear);
   }
 
   Future<String?> _readDownloadMode(String lessonId, String resolution) async {

@@ -101,6 +101,7 @@ class VideoResolutionResponse(BaseModel):
     playlist_url: Optional[str] = None
     segments_count: int
     total_size_bytes: int
+    target_duration: Optional[float] = None
     status: str
     created_at: datetime
 

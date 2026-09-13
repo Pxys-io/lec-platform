@@ -66,6 +66,10 @@ class VideoResolution(SQLModel, table=True):
     segments_count: int = 0
     total_size_bytes: int = 0
 
+    # HLS TARGETDURATION for this rendition (ceil of longest content segment),
+    # persisted at transcode time so playlist serving never scans segments.
+    target_duration: Optional[float] = None
+
     status: str = "pending"
 
     created_at: datetime = Field(default_factory=datetime.utcnow)

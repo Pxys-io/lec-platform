@@ -64,12 +64,14 @@ def video_prefix(video_id: str) -> str:
     return f"videos/{video_id}/"
 
 
-def overlay_key(file_hash: str) -> str:
-    return f"watermarks/overlays/{file_hash}.mp4"
+def overlay_key(file_hash: str, container: str = "fmp4") -> str:
+    ext = "mp4" if container == "fmp4" else "ts"
+    return f"watermarks/overlays/{file_hash}.{ext}"
 
 
-def break_screen_key(file_hash: str) -> str:
-    return f"watermarks/break/{file_hash}.ts"
+def break_screen_key(file_hash: str, container: str = "fmp4") -> str:
+    ext = "mp4" if container == "fmp4" else "ts"
+    return f"watermarks/break/{file_hash}.{ext}"
 
 
 # --- Operations -------------------------------------------------------------

@@ -303,11 +303,18 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
             resolution.resolution,
           );
         }
-        // Inject auth token into all proxy URIs (key / watermark / overlay) so ExoPlayer can fetch without headers (file:// playback)
+        // Inject auth token into proxy URIs (key / watermark / overlay) so the
+        // native player can fetch them without headers (file:// playback).
+        // R2/MUX media URLs are public (AES-encrypted content) and untouched.
+        // Works for MUX (fMP4 + EXT-X-MAP) and local-ffmpeg (MPEG-TS) alike:
+        // both are plain HLS playlists the OS player already understands.
         final token = apiClient.token ?? '';
         if (token.isNotEmpty && playlistContent.contains('/proxy/')) {
+          final proxyPattern = RegExp(
+            '${RegExp.escape(apiClient.baseUrl)}/videos/proxy[^\\s"\\n]+',
+          );
           playlistContent = playlistContent.replaceAllMapped(
-            RegExp(r'https://main\.lec\.pxysio\.top/api/v1/videos/proxy[^\s"\n]+'),
+            proxyPattern,
             (m) {
               final url = m.group(0)!;
               if (url.contains('?token=')) return url;
@@ -607,7 +614,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final bool debugMode = true;
+    const bool debugMode = false;
 
     return Scaffold(
       backgroundColor: Colors.black,
