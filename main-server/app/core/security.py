@@ -80,3 +80,10 @@ def get_token_type(credentials: HTTPAuthorizationCredentials = Depends(security)
     token = credentials.credentials
     payload = decode_token(token)
     return payload.get("type", "access")
+
+
+def can_see_answers(user) -> bool:
+    """Instructors and admins may see correct answers/explanations in question
+    lists; students must not (answers only come back after a submit)."""
+    role = getattr(user, "role", None)
+    return role in ("admin", "super_admin", "instructor")

@@ -34,6 +34,7 @@ class _QuizSessionScreenState extends State<QuizSessionScreen> {
   bool _isSubmitting = false;
   Map<String, dynamic>? _previousAttempt;
   bool _loadingPrevious = true;
+  Map<String, Map<String, dynamic>> _reviewAnswers = {};
 
   bool get _timed =>
       widget.quiz.timeLimit != null && widget.quiz.timeLimit! > 0;
@@ -127,6 +128,19 @@ class _QuizSessionScreenState extends State<QuizSessionScreen> {
       final result = await context
           .read<QuizRepository>()
           .submitQuiz(widget.quiz.id, Map<String, String>.from(_userAnswers));
+      // Server returns per-question grading (correct answers + explanations)
+      // only AFTER submit - use it for the review screen. Fall back to the
+      // in-memory questions for legacy/empty responses.
+      final graded = result['questions'];
+      if (graded is List) {
+        final map = <String, Map<String, dynamic>>{};
+        for (final q in graded) {
+          if (q is Map && q['id'] != null) {
+            map[q['id']] = Map<String, dynamic>.from(q);
+          }
+        }
+        _reviewAnswers = map;
+      }
       if (mounted) {
         setState(() {
           _isSubmitted = true;
@@ -599,7 +613,17 @@ class _QuizSessionScreenState extends State<QuizSessionScreen> {
               final i = e.key;
               final q = e.value;
               final given = _userAnswers[q.id];
-              final ok = _isCorrect(q);
+              // Prefer the server's post-submit grading; fall back to the
+              // in-memory question (legacy responses / instructor preview).
+              final graded = _reviewAnswers[q.id];
+              final ok = graded?['is_correct'] == true || _isCorrect(q);
+              final correctAnswer =
+                  (graded?['correct_answer'] as String?)?.trim().isNotEmpty == true
+                      ? graded!['correct_answer'] as String
+                      : q.correctAnswer;
+              final explanation = (graded?['explanation'] as String?)?.isNotEmpty == true
+                  ? graded!['explanation'] as String
+                  : q.explanation;
               return Card(
                 margin: const EdgeInsets.only(bottom: 12),
                 child: Padding(
@@ -636,12 +660,12 @@ class _QuizSessionScreenState extends State<QuizSessionScreen> {
                       ),
                       if (!ok) ...[
                         const SizedBox(height: 4),
-                        Text('Correct answer: ${q.correctAnswer}'),
+                        Text('Correct answer: $correctAnswer'),
                       ],
-                      if ((q.explanation ?? '').isNotEmpty) ...[
+                      if ((explanation ?? '').isNotEmpty) ...[
                         const SizedBox(height: 4),
                         Text(
-                          q.explanation!,
+                          explanation!,
                           style: const TextStyle(color: Colors.grey),
                         ),
                       ],

@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlmodel import Session, select
 
 from app.core.database import get_db
+from app.core.security import can_see_answers
 from app.models import User, Quiz, Question, QuizAttempt, Lesson, UserRole
 from app.schemas import (
     QuizCreate,
@@ -16,6 +17,8 @@ from app.schemas import (
     QuestionResponse,
     QuizSubmit,
     QuizAttemptResponse,
+    QuizSubmitResponse,
+    QuizQuestionResult,
 )
 from app.api.v1.users import get_current_user, require_instructor
 
@@ -185,6 +188,8 @@ def get_quiz_questions(
 
     questions = db.exec(select(Question).where(Question.quiz_id == quiz_id).order_by(Question.order)).all()
 
+    show_answers = can_see_answers(user)
+
     result = []
     for q in questions:
         options = json.loads(q.options) if q.options else None
@@ -194,7 +199,8 @@ def get_quiz_questions(
             type=q.type,
             question=q.question,
             options=options,
-            correct_answer=q.correct_answer,
+            correct_answer=q.correct_answer if show_answers else "",
+            explanation=q.explanation if show_answers else None,
             points=q.points,
             order=q.order,
         ))
@@ -301,7 +307,7 @@ def delete_question(
     return {"message": "Question deleted successfully"}
 
 
-@router.post("/{quiz_id}/submit", response_model=QuizAttemptResponse)
+@router.post("/{quiz_id}/submit", response_model=QuizSubmitResponse)
 def submit_quiz(
     quiz_id: str,
     request: QuizSubmit,
@@ -316,12 +322,23 @@ def submit_quiz(
 
     total_points = sum(q.points for q in questions)
     earned_points = 0
+    question_results: List[QuizQuestionResult] = []
 
     for question in questions:
         user_answer = request.answers.get(question.id, "").strip().lower()
         correct = question.correct_answer.strip().lower()
-        if user_answer == correct:
+        is_correct = user_answer == correct
+        if is_correct:
             earned_points += question.points
+        question_results.append(
+            QuizQuestionResult(
+                id=question.id,
+                user_answer=request.answers.get(question.id, ""),
+                correct_answer=question.correct_answer,
+                explanation=question.explanation,
+                is_correct=is_correct,
+            )
+        )
 
     score = (earned_points / total_points * 100) if total_points > 0 else 0
     passed = score >= quiz.passing_score
@@ -338,13 +355,14 @@ def submit_quiz(
     db.commit()
     db.refresh(attempt)
 
-    return QuizAttemptResponse(
+    return QuizSubmitResponse(
         id=attempt.id,
         quiz_id=attempt.quiz_id,
         score=attempt.score,
         passed=attempt.passed,
         started_at=attempt.started_at,
         completed_at=attempt.completed_at,
+        questions=question_results,
     )
 
 

@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlmodel import Session, select, func
 
 from app.core.database import get_db
+from app.core.security import can_see_answers
 from app.models import User, QBank, Question, QBankEnrollment, QBankSession, UserRole
 from app.schemas import (
     QBankCreate,
@@ -269,6 +270,8 @@ def get_qbank_questions(
 
     questions = db.exec(select(Question).where(Question.qbank_id == qbank_id)).all()
 
+    show_answers = can_see_answers(user)
+
     result = []
     for q in questions:
         options = json.loads(q.options) if q.options else None
@@ -279,8 +282,8 @@ def get_qbank_questions(
                 type=q.type,
                 question=q.question,
                 options=options,
-                correct_answer=q.correct_answer,
-                explanation=q.explanation,
+                correct_answer=q.correct_answer if show_answers else "",
+                explanation=q.explanation if show_answers else None,
                 points=q.points,
                 tags=json.loads(q.tags) if q.tags else [],
                 order=q.order,
@@ -384,7 +387,7 @@ def create_qbank_session(
 
     if not filtered_questions:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_USER_INPUT,
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail="No questions found for selected subjects",
         )
 

@@ -195,6 +195,21 @@ class QuizAttemptResponse(BaseModel):
         from_attributes = True
 
 
+class QuizQuestionResult(BaseModel):
+    id: str
+    user_answer: str = ""
+    correct_answer: str = ""
+    explanation: Optional[str] = None
+    is_correct: bool = False
+
+
+class QuizSubmitResponse(QuizAttemptResponse):
+    """QuizAttemptResponse plus per-question grading, returned only after a
+    submit so students can review without answers leaking via GET."""
+
+    questions: List[QuizQuestionResult] = []
+
+
 class CommentBase(BaseModel):
     content: str
     parent_id: Optional[str] = None
