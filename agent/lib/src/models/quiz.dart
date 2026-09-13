@@ -21,16 +21,18 @@ class Quiz {
 
   factory Quiz.fromJson(Map<String, dynamic> json) {
     return Quiz(
-      id: json['id'],
-      lessonId: json['lesson_id'],
-      title: json['title'],
-      description: json['description'],
-      passingScore: (json['passing_score'] as num).toDouble(),
-      timeLimit: json['time_limit'],
-      questions: json['questions'] != null 
-          ? (json['questions'] as List).map((e) => Question.fromJson(Map<String, dynamic>.from(e as Map))).toList() 
+      id: json['id']?.toString() ?? '',
+      lessonId: json['lesson_id']?.toString() ?? '',
+      title: json['title']?.toString() ?? 'Quiz',
+      description: json['description']?.toString(),
+      passingScore:
+          (json['passing_score'] as num?)?.toDouble() ?? 70.0,
+      timeLimit: (json['time_limit'] as num?)?.toInt(),
+      questions: json['questions'] != null
+          ? (json['questions'] as List).map((e) => Question.fromJson(Map<String, dynamic>.from(e as Map))).toList()
           : [],
-      createdAt: DateTime.parse(json['created_at']),
+      createdAt: DateTime.tryParse(json['created_at']?.toString() ?? '') ??
+          DateTime.now(),
     );
   }
 
@@ -76,18 +78,23 @@ class Question {
   });
 
   factory Question.fromJson(Map<String, dynamic> json) {
+    final rawOptions = json['options'];
     return Question(
-      id: json['id'],
-      quizId: json['quiz_id'],
-      qbankId: json['qbank_id'],
-      type: json['type'],
-      text: json['question'] ?? '',
-      options: json['options'] != null ? List<String>.from(json['options']) : [],
-      correctAnswer: json['correct_answer'] ?? '',
-      explanation: json['explanation'],
-      tags: List<String>.from(json['tags'] ?? []),
-      points: (json['points'] as num).toDouble(),
-      order: json['order'] ?? 0,
+      id: json['id']?.toString() ?? '',
+      quizId: json['quiz_id']?.toString(),
+      qbankId: json['qbank_id']?.toString(),
+      type: json['type']?.toString() ?? 'multiple_choice',
+      text: json['question']?.toString() ?? '',
+      options: rawOptions is List
+          ? rawOptions.map((e) => e.toString()).toList()
+          : [],
+      correctAnswer: json['correct_answer']?.toString() ?? '',
+      explanation: json['explanation']?.toString(),
+      tags: json['tags'] is List
+          ? (json['tags'] as List).map((e) => e.toString()).toList()
+          : [],
+      points: (json['points'] as num?)?.toDouble() ?? 1.0,
+      order: (json['order'] as num?)?.toInt() ?? 0,
     );
   }
 

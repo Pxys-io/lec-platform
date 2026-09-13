@@ -11,6 +11,7 @@ from app.schemas import (
     QuizCreate,
     QuizUpdate,
     QuizResponse,
+    QuizListResponse,
     QuestionCreate,
     QuestionResponse,
     QuizSubmit,
@@ -20,6 +21,37 @@ from app.api.v1.users import get_current_user, require_instructor
 
 
 router = APIRouter(prefix="/quizzes", tags=["quizzes"])
+
+
+@router.get("", response_model=List[QuizListResponse])
+def list_quizzes(
+    db: Session = Depends(get_db),
+    user: User = Depends(require_instructor),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(200, ge=1, le=500),
+):
+    from app.models import Course
+
+    quizzes = db.exec(select(Quiz).order_by(Quiz.created_at.desc()).offset(skip).limit(limit)).all()
+    result = []
+    for quiz in quizzes:
+        lesson = db.get(Lesson, quiz.lesson_id) if quiz.lesson_id else None
+        course = db.get(Course, lesson.course_id) if lesson else None
+        qcount = db.exec(select(Question.id).where(Question.quiz_id == quiz.id)).all()
+        result.append(QuizListResponse(
+            id=quiz.id,
+            lesson_id=quiz.lesson_id,
+            title=quiz.title,
+            description=quiz.description,
+            passing_score=quiz.passing_score,
+            time_limit=quiz.time_limit,
+            created_at=quiz.created_at,
+            lesson_title=lesson.title if lesson else None,
+            course_id=course.id if course else None,
+            course_title=course.title if course else None,
+            questions_count=len(qcount),
+        ))
+    return result
 
 
 @router.get("/{quiz_id}", response_model=QuizResponse)
@@ -52,6 +84,12 @@ def create_quiz(
     lesson = db.get(Lesson, request.lesson_id)
     if not lesson:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lesson not found")
+
+    if lesson.quiz_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Lesson already has a quiz. Delete or detach it first.",
+        )
 
     quiz = Quiz(
         lesson_id=request.lesson_id,
@@ -240,6 +278,27 @@ def update_question(
         points=question.points,
         order=question.order,
     )
+
+
+@router.delete("/{quiz_id}/questions/{question_id}")
+def delete_question(
+    quiz_id: str,
+    question_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_instructor),
+):
+    quiz = db.get(Quiz, quiz_id)
+    if not quiz:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quiz not found")
+
+    question = db.get(Question, question_id)
+    if not question or question.quiz_id != quiz_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Question not found")
+
+    db.delete(question)
+    db.commit()
+
+    return {"message": "Question deleted successfully"}
 
 
 @router.post("/{quiz_id}/submit", response_model=QuizAttemptResponse)

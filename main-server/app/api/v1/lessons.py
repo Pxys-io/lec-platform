@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlmodel import Session, select
 
 from app.core.database import get_db
-from app.models import User, Course, Lesson, Material, Comment, UserRole, UserCourseAccess, UserLessonAccess, WatchHistory, QuizAttempt, LockType
+from app.models import User, Course, Lesson, Material, Comment, UserRole, UserCourseAccess, UserLessonAccess, WatchHistory, Quiz, QuizAttempt, LockType
 from app.schemas import (
     LessonCreate,
     LessonUpdate,
@@ -78,12 +78,17 @@ def check_lesson_access(db: Session, user: User, lesson: Lesson) -> bool:
     elif lesson.lock_type == LockType.QUIZ:
         if not prev_lesson.quiz_id:
             return True
+        quiz = db.get(Quiz, prev_lesson.quiz_id)
+        if not quiz:
+            return True
         attempt = db.exec(
             select(QuizAttempt)
             .where((QuizAttempt.user_id == user.id) & (QuizAttempt.quiz_id == prev_lesson.quiz_id))
             .order_by(QuizAttempt.completed_at.desc())
         ).first()
-        if not attempt or not attempt.passed:
+        # Live evaluation against the CURRENT passing score, so adjusting the
+        # threshold takes effect immediately (never trust a frozen flag).
+        if not attempt or attempt.score is None or attempt.score < quiz.passing_score:
             return False
             
     return True
@@ -188,6 +193,32 @@ def update_lesson(
         lesson.lock_type = request.lock_type
     if request.is_published is not None:
         lesson.is_published = request.is_published
+    if request.quiz_id is not None:
+        # "" unlinks; UUID links (keeps the 1:1 quiz<->lesson invariant).
+        if request.quiz_id == "":
+            if lesson.quiz_id:
+                old_quiz = db.get(Quiz, lesson.quiz_id)
+                if old_quiz and old_quiz.lesson_id == lesson.id:
+                    old_quiz.lesson_id = None
+                    db.add(old_quiz)
+                lesson.quiz_id = None
+        else:
+            quiz = db.get(Quiz, request.quiz_id)
+            if not quiz:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quiz not found")
+            if lesson.quiz_id and lesson.quiz_id != quiz.id:
+                prev_quiz = db.get(Quiz, lesson.quiz_id)
+                if prev_quiz and prev_quiz.lesson_id == lesson.id:
+                    prev_quiz.lesson_id = None
+                    db.add(prev_quiz)
+            if quiz.lesson_id and quiz.lesson_id != lesson.id:
+                prev_lesson = db.get(Lesson, quiz.lesson_id)
+                if prev_lesson and prev_lesson.quiz_id == quiz.id:
+                    prev_lesson.quiz_id = None
+                    db.add(prev_lesson)
+            quiz.lesson_id = lesson.id
+            lesson.quiz_id = quiz.id
+            db.add(quiz)
 
     db.add(lesson)
     db.commit()

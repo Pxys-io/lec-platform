@@ -51,6 +51,8 @@ class LessonUpdate(BaseModel):
     order: Optional[int] = None
     video_id: Optional[str] = None
     lock_type: Optional[str] = None
+    # Link/unlink a quiz gate: UUID links, "" unlinks, absent leaves unchanged.
+    quiz_id: Optional[str] = None
     is_published: Optional[bool] = None
 
 
@@ -111,6 +113,13 @@ class QuizResponse(QuizBase):
 
     class Config:
         from_attributes = True
+
+
+class QuizListResponse(QuizResponse):
+    lesson_title: Optional[str] = None
+    course_id: Optional[str] = None
+    course_title: Optional[str] = None
+    questions_count: int = 0
 
 
 class QBankBase(BaseModel):
