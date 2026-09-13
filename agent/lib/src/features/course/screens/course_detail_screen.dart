@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../models/course.dart';
 import '../../../models/quiz.dart';
+import '../../../models/lesson.dart';
 import '../../../repositories/quiz_repository.dart';
 import '../../../repositories/lesson_repository.dart';
 import '../../../logic/lesson/lesson_cubit.dart';
@@ -30,16 +31,18 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
     context.read<LessonCubit>().loadLessons(widget.course.id);
   }
 
-  static bool _isLocked(lesson) {
+  static bool _isLocked(Lesson lesson) {
     // Backend lock values: none | previous_lesson | quiz ('locked' kept for
     // backward compatibility with older payloads).
     return lesson.lockType != 'none';
   }
 
-  Future<Quiz?> _loadQuizForLesson(BuildContext context, lesson) async {
+  Future<Quiz?> _loadQuizForLesson(BuildContext context, Lesson lesson) async {
+    final quizId = lesson.quizId;
+    if (quizId == null) return null;
     final quizRepo = context.read<QuizRepository>();
-    final quizData = await quizRepo.getQuiz(lesson.quizId);
-    final questions = await quizRepo.getQuizQuestions(lesson.quizId);
+    final quizData = await quizRepo.getQuiz(quizId);
+    final questions = await quizRepo.getQuizQuestions(quizId);
     return Quiz(
       id: quizData.id,
       lessonId: quizData.lessonId,
@@ -54,7 +57,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
 
   Future<bool> _openQuiz(
     BuildContext context,
-    lesson, {
+    Lesson lesson, {
     bool tutorMode = false,
   }) async {
     try {
@@ -79,7 +82,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
     }
   }
 
-  Future<void> _openVideo(BuildContext context, lesson) async {
+  Future<void> _openVideo(BuildContext context, Lesson lesson) async {
     final user = context.read<AuthCubit>().state.user;
     if (context.mounted) {
       await context.push('/video-player', extra: {
@@ -96,14 +99,14 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
 
   Future<void> _handleLockedTap(
     BuildContext context,
-    lesson,
-    List<dynamic> lessons,
+    Lesson lesson,
+    List<Lesson> lessons,
   ) async {
     final sorted = List.of(lessons)
-      ..sort((a, b) => (a.order as int).compareTo(b.order as int));
-    dynamic prev;
+      ..sort((a, b) => a.order.compareTo(b.order));
+    Lesson? prev;
     for (final l in sorted) {
-      if ((l.order as int) < (lesson.order as int)) prev = l;
+      if (l.order < lesson.order) prev = l;
     }
     final message = lesson.lockType == 'quiz'
         ? 'This lesson is quiz-gated. Pass the previous lesson\u2019s quiz to unlock it.'
@@ -115,7 +118,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
       builder: (ctx) => AlertDialog(
         title: const Text('Lesson locked'),
         content: Text(goToQuiz
-            ? '$message\n\nPrevious: ${prev.title}'
+            ? '$message\n\nPrevious: ${prev?.title ?? ''}'
             : message),
         actions: [
           TextButton(
@@ -130,12 +133,12 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
         ],
       ),
     );
-    if (action == true && context.mounted) {
+    if (action == true && context.mounted && prev != null) {
       await _openQuiz(context, prev);
     }
   }
 
-  Future<void> _handleLessonTap(BuildContext context, lesson) async {
+  Future<void> _handleLessonTap(BuildContext context, Lesson lesson) async {
     final state = context.read<LessonCubit>().state;
     final lessons =
         state is LessonLoaded ? state.lessons : [lesson];
