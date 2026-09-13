@@ -16,15 +16,15 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   final List<Map<String, String>> _pages = [
     {
       'title': 'Interactive Lectures',
-      'description': 'Watch high-quality medical lectures with synchronized notes.',
+      'description': 'Watch high-quality lectures with synchronized notes.',
     },
     {
-      'title': 'Clinical QBank',
-      'description': 'Practice with UWorld-style clinical scenarios and detailed rationales.',
+      'title': 'Practice & QBank',
+      'description': 'Test yourself with questions and detailed rationales.',
     },
     {
-      'title': 'Advanced Analytics',
-      'description': 'Track your progress and identify areas for improvement.',
+      'title': 'Track Your Progress',
+      'description': 'Monitor your learning and identify areas to improve.',
     },
   ];
 
