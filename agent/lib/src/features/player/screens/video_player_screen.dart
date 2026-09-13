@@ -153,6 +153,30 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     }
   }
 
+  bool _playerErrorShown = false;
+
+  void _watchForPlayerErrors() {
+    _playerErrorShown = false;
+    _videoPlayerController?.addListener(() {
+      final v = _videoPlayerController?.value;
+      if (v != null &&
+          v.hasError &&
+          !_playerErrorShown &&
+          mounted) {
+        _playerErrorShown = true;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Player error: ${v.errorDescription ?? 'unknown playback error'}',
+            ),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 8),
+          ),
+        );
+      }
+    });
+  }
+
   Future<void> _loadAndPlayDirect() async {
     try {
       final videoRepo = context.read<VideoRepository>();
@@ -166,6 +190,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
           'Authorization': 'Bearer ${context.read<ApiClient>().token}',
         },
       );
+      _watchForPlayerErrors();
       await _videoPlayerController!.initialize();
 
       _chewieController = ChewieController(
@@ -303,11 +328,10 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
             resolution.resolution,
           );
         }
-        // Inject auth token into proxy URIs (key / watermark / overlay) so the
-        // native player can fetch them without headers (file:// playback).
-        // R2/MUX media URLs are public (AES-encrypted content) and untouched.
-        // Works for MUX (fMP4 + EXT-X-MAP) and local-ffmpeg (MPEG-TS) alike:
-        // both are plain HLS playlists the OS player already understands.
+        // Inject a FRESH auth token into proxy URIs (key / watermark /
+        // overlay) so the native player can fetch them without headers
+        // (file:// playback). Cached playlists may carry an expired token,
+        // so any existing token param is always stripped first.
         final token = apiClient.token ?? '';
         if (token.isNotEmpty && playlistContent.contains('/proxy/')) {
           final proxyPattern = RegExp(
@@ -316,12 +340,12 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
           playlistContent = playlistContent.replaceAllMapped(
             proxyPattern,
             (m) {
-              final url = m.group(0)!;
-              if (url.contains('?token=')) return url;
-              // Strip any existing token query part and inject fresh token
-              final base = url.split('?token=')[0].split('&token=')[0];
-              // Preserve other query params if present (unlikely)
-              return '$base?token=$token';
+              var url = m.group(0)!;
+              // Strip any previous token (?token= or &token= with its value).
+              url = url.replaceAll(RegExp(r'[?&]token=[^&\s"]*'), '');
+              // Preserve other query params if present (unlikely).
+              final sep = url.contains('?') ? '&' : '?';
+              return '$url${sep}token=$token';
             },
           );
         }
@@ -348,6 +372,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
         _videoPlayerController = VideoPlayerController.file(File(videoUrl));
       }
 
+      _watchForPlayerErrors();
       await _videoPlayerController!.initialize();
 
       _chewieController = ChewieController(

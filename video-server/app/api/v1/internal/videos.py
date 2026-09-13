@@ -58,6 +58,74 @@ def _resolve_local_segment(path_str) -> Optional[Path]:
     return None
 
 
+def _source_has_audio(path) -> bool:
+    """True if a media file carries an audio track (ffprobe). Defaults True
+    (preserve today's behavior) when probing fails."""
+    import subprocess as _sp
+    try:
+        r = _sp.run(
+            ["ffprobe", "-v", "error", "-show_entries", "stream=codec_type",
+             "-of", "csv=p=0", str(path)],
+            capture_output=True, text=True, timeout=30,
+        )
+        if r.returncode == 0:
+            return "audio" in r.stdout.split()
+    except Exception as e:
+        print(f"audio probe fallback: {e}")
+    return True
+
+
+_AUDIO_CACHE: dict = {}
+
+
+def _origin_has_audio(video, res, db=None) -> bool:
+    """Whether the origin rendition carries audio. Break screens must match:
+    adding AAC to a video-only origin (or vice versa) changes the track set
+    across a DISCONTINUITY and stalls strict players (black screen)."""
+    key = (video.id, res.resolution)
+    if key in _AUDIO_CACHE:
+        return _AUDIO_CACHE[key]
+    val = True
+    try:
+        probe_path = None
+        init_key = storage.segment_key(video.id, res.resolution, "init.mp4")
+        if storage.r2_enabled() and storage.object_exists(init_key):
+            dest = Path(settings.CACHE_STORAGE_PATH) / "break_screens" / f"audio_{video.id[:8]}_{res.resolution}_init.mp4"
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            storage.download_file(init_key, str(dest))
+            if video.is_encrypted and video.encryption_key_hex:
+                from app.core.encryption import decrypt_segment_file, derive_segment_iv
+                dec = dest.with_suffix(".plain.mp4")
+                if decrypt_segment_file(str(dest), str(dec), video.encryption_key_hex, derive_segment_iv(f"init:{video.id}:{res.resolution}")):
+                    probe_path = dec
+                else:
+                    probe_path = dest
+            else:
+                probe_path = dest
+        elif db is not None:
+            seg0 = db.exec(
+                select(VideoSegment)
+                .where(VideoSegment.resolution_id == res.id)
+                .order_by(VideoSegment.segment_number)
+            ).first()
+            if seg0 is not None:
+                if seg0.storage_type == "r2":
+                    probe_path = storage.localize_playable_segment(
+                        seg0.storage_path, seg0.filename, video.id,
+                        res.resolution, seg0.segment_hash,
+                        Path(settings.CACHE_STORAGE_PATH) / "break_screens" / "audio_src",
+                        video.encryption_key_hex,
+                    )
+                else:
+                    probe_path = _resolve_local_segment(seg0.storage_path)
+        if probe_path is not None:
+            val = _source_has_audio(probe_path)
+    except Exception as e:
+        print(f"origin audio probe fallback: {e}")
+    _AUDIO_CACHE[key] = val
+    return val
+
+
 def _origin_container(video_id: str, resolution: str) -> str:
     """Source container of a rendition: 'fmp4' for MUX variants (init.mp4
     present) or 'ts' for locally-transcoded variants. Watermark segments must
@@ -1196,7 +1264,13 @@ def get_dynamic_watermark_segment(
     container = _origin_container(video.id, res.resolution) if video else "fmp4"
     wm_ext = "mp4" if container == "fmp4" else "ts"
     wm_media = "video/mp4" if container == "fmp4" else "video/mp2t"
-    cache_key = f"break_{resolution_id}_{info_b64}_{break_dur}_{container}"
+    # Track set must match too: a video-only origin gets a video-only break,
+    # an origin with audio gets AAC (see _origin_has_audio).
+    has_audio = _origin_has_audio(video, res, db) if video else True
+    cache_key = (
+        f"break_{resolution_id}_{info_b64}_{break_dur}_{container}_"
+        f"{'a' if has_audio else 'v'}"
+    )
     file_hash = hashlib.md5(cache_key.encode()).hexdigest()
     r2_key = storage.break_screen_key(file_hash, container)
 
@@ -1259,9 +1333,10 @@ def get_dynamic_watermark_segment(
             "-i", f"color=c=darkblue:s={res.width}x{res.height}:d={break_dur}:r=30",
         ]
 
-        if tts_wav and tts_wav.exists():
+        use_tts = bool(tts_wav and tts_wav.exists()) and has_audio
+        if use_tts:
             cmd.extend(["-i", str(tts_wav)])
-        else:
+        elif has_audio:
             # Content segments carry AAC audio - a video-only break screen
             # across a DISCONTINUITY stalls players (audio track vanishes).
             # Always mux an AAC track of matching duration instead.
@@ -1272,21 +1347,25 @@ def get_dynamic_watermark_segment(
 
         cmd.extend([
             "-vf", vf,
-            "-map", "0:v:0", "-map", "1:a:0",
+            "-map", "0:v:0",
+        ])
+        if has_audio:
+            cmd.extend(["-map", "1:a:0"])
+        cmd.extend([
             "-c:v", "libx264", "-profile:v", "high", "-preset", "fast", "-crf", "23",
             "-pix_fmt", "yuv420p",
             "-r", "30",
             "-g", "30",
             "-keyint_min", "30",
             "-sc_threshold", "0",
-            "-c:a", "aac", "-b:a", "128k",
         ])
-
-        if tts_wav and tts_wav.exists():
-            # apad pads the short TTS voiceover with silence to the full break
-            # duration (bare -shortest would truncate the video to ~4s of audio).
-            cmd.extend(["-af", "apad"])
-        cmd.extend(["-shortest"])
+        if has_audio:
+            cmd.extend(["-c:a", "aac", "-b:a", "128k"])
+            if use_tts:
+                # apad pads the short TTS voiceover with silence to the full
+                # break duration (bare -shortest would truncate the video).
+                cmd.extend(["-af", "apad"])
+            cmd.extend(["-shortest"])
 
         if container == "fmp4":
             cmd.extend([
@@ -1306,15 +1385,27 @@ def get_dynamic_watermark_segment(
                     "ffmpeg", "-y",
                     "-f", "lavfi",
                     "-i", f"color=c=darkblue:s={res.width}x{res.height}:d={break_dur}:r=30",
-                    "-f", "lavfi",
-                    "-i", f"anullsrc=r=48000:cl=stereo:d={break_dur}",
-                    "-map", "0:v:0", "-map", "1:a:0",
+                ]
+                if has_audio:
+                    _fb_cmd.extend([
+                        "-f", "lavfi",
+                        "-i", f"anullsrc=r=48000:cl=stereo:d={break_dur}",
+                    ])
+                _fb_cmd.extend([
+                    "-map", "0:v:0",
+                ])
+                if has_audio:
+                    _fb_cmd.extend(["-map", "1:a:0"])
+                _fb_cmd.extend([
                     "-c:v", "libx264", "-profile:v", "high", "-preset", "ultrafast", "-crf", "28",
                     "-pix_fmt", "yuv420p",
-                    "-c:a", "aac", "-b:a", "128k", "-shortest",
+                ])
+                if has_audio:
+                    _fb_cmd.extend(["-c:a", "aac", "-b:a", "128k", "-shortest"])
+                _fb_cmd.extend([
                     "-r", "30",
                     "-g", "30",
-                ]
+                ])
                 if container == "fmp4":
                     _fb_cmd.extend([
                         "-f", "mp4",
