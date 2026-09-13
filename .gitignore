@@ -40,3 +40,8 @@ venv/
 
 # TypeScript build
 *.tsbuildinfo
+
+# Flutter build artifacts (project convention)
+agent/.dart_tool/
+agent/pubspec.lock
+.nvimlog
