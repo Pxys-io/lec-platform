@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 class ApiException implements Exception {
@@ -153,34 +154,34 @@ class ApiClient {
     Map<String, String> headers,
     String? requestBody,
   ) {
-    print('╔══════════════════════════════════════════');
-    print('║ 🌐 REQUEST: $method $uri');
-    print(
+    debugPrint('╔══════════════════════════════════════════');
+    debugPrint('║ 🌐 REQUEST: $method $uri');
+    debugPrint(
       '║ Headers: ${headers.entries.map((e) => '${e.key}: ${e.value.length > 80 ? '${e.value.substring(0, 80)}...' : e.value}').join(', ')}',
     );
     if (uri.queryParameters.isNotEmpty) {
-      print('║ Query params: ${uri.queryParameters}');
+      debugPrint('║ Query params: ${uri.queryParameters}');
     }
     if (requestBody != null) {
-      print('║ Body:');
+      debugPrint('║ Body:');
       for (final line in requestBody.split('\n')) {
-        print('║   $line');
+        debugPrint('║   $line');
       }
     }
-    print('╚══════════════════════════════════════════');
+    debugPrint('╚══════════════════════════════════════════');
   }
 
   void _printResponse(Uri uri, http.Response response) {
-    print('╔══════════════════════════════════════════');
-    print('║ ✅ RESPONSE: ${response.statusCode} $uri');
-    print(
+    debugPrint('╔══════════════════════════════════════════');
+    debugPrint('║ ✅ RESPONSE: ${response.statusCode} $uri');
+    debugPrint(
       '║ Headers: ${response.headers.entries.map((e) => '${e.key}: ${e.value}').join(', ')}',
     );
-    print('║ Body (${response.body.length} chars):');
+    debugPrint('║ Body (${response.body.length} chars):');
     for (final line in response.body.split('\n')) {
-      print('║   $line');
+      debugPrint('║   $line');
     }
-    print('╚══════════════════════════════════════════');
+    debugPrint('╚══════════════════════════════════════════');
   }
 
   static const _videoServerUrl = String.fromEnvironment(

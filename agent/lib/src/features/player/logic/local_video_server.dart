@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'encryption_helper.dart';
 import 'video_downloader.dart' show kOfflineFormat;
 
@@ -48,7 +49,7 @@ class LocalVideoServer {
     _blockReason = null;
 
     _server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-    print(
+    debugPrint(
       'Local native server started on http://${_server!.address.host}:${_server!.port}',
     );
 
@@ -86,7 +87,7 @@ class LocalVideoServer {
             ..close();
         }
       } catch (e) {
-        print('Server error: $e');
+        debugPrint('Server error: $e');
         request.response
           ..statusCode = HttpStatus.internalServerError
           ..write('Internal Error')
