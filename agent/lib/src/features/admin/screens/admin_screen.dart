@@ -1,12 +1,9 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:go_router/go_router.dart';
 import '../../../logic/auth/auth_cubit.dart';
 import '../../../repositories/misc_repository.dart';
 import '../../../repositories/user_repository.dart';
-import '../../../repositories/course_repository.dart';
 
 class AdminScreen extends StatefulWidget {
   const AdminScreen({super.key});
@@ -119,32 +116,11 @@ class _AdminScreenState extends State<AdminScreen> {
                     child: Column(
                       children: [
                         ListTile(
-                          leading: const Icon(LucideIcons.users),
-                          title: const Text('Manage Users'),
-                          trailing: const Icon(LucideIcons.chevronRight),
-                          onTap: () {},
-                        ),
-                        const Divider(height: 1),
-                        ListTile(
-                          leading: const Icon(LucideIcons.bookOpen),
-                          title: const Text('Manage Courses'),
-                          trailing: const Icon(LucideIcons.chevronRight),
-                          onTap: () {},
-                        ),
-                        const Divider(height: 1),
-                        ListTile(
                           leading: const Icon(LucideIcons.smartphone),
                           title: const Text('User Devices'),
                           subtitle: const Text('View & reset device limits'),
                           trailing: const Icon(LucideIcons.chevronRight),
                           onTap: () => _showDeviceManagement(context),
-                        ),
-                        const Divider(height: 1),
-                        ListTile(
-                          leading: const Icon(LucideIcons.barChart3),
-                          title: const Text('View All Certificates'),
-                          trailing: const Icon(LucideIcons.chevronRight),
-                          onTap: () {},
                         ),
                       ],
                     ),

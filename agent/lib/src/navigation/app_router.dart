@@ -4,7 +4,6 @@ import '../features/auth/screens/splash_screen.dart';
 import '../features/auth/screens/onboarding_screen.dart';
 import '../features/auth/screens/login_screen.dart';
 import '../features/auth/screens/register_screen.dart';
-import '../features/auth/screens/otp_screen.dart';
 import '../features/home/screens/home_screen.dart';
 import '../features/discover/screens/discover_screen.dart';
 import '../features/qbank/screens/qbank_screen.dart';
@@ -55,14 +54,13 @@ class AppRouter {
       final isRegistering = state.matchedLocation == '/register';
       final isOnboarding = state.matchedLocation == '/onboarding';
       final isSplashing = state.matchedLocation == '/splash';
-      final isOtp = state.matchedLocation == '/otp';
 
       if (status == AuthStatus.authenticated) {
-        if (isLoggingIn || isRegistering || isOnboarding || isSplashing || isOtp) {
+        if (isLoggingIn || isRegistering || isOnboarding || isSplashing) {
           return '/home';
         }
       } else {
-        if (!isLoggingIn && !isRegistering && !isOnboarding && !isSplashing && !isOtp) {
+        if (!isLoggingIn && !isRegistering && !isOnboarding && !isSplashing) {
           return '/login';
         }
       }
@@ -85,10 +83,6 @@ class AppRouter {
       GoRoute(
         path: '/register',
         builder: (context, state) => const RegisterScreen(),
-      ),
-      GoRoute(
-        path: '/otp',
-        builder: (context, state) => const OtpScreen(),
       ),
       GoRoute(
         path: '/downloads',
