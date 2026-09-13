@@ -14,7 +14,9 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../logic/local_video_server.dart';
 import '../logic/video_downloader.dart';
+import '../logic/watch_progress_tracker.dart';
 import '../../../repositories/video_repository.dart';
+import '../../../repositories/misc_repository.dart';
 import '../../../api/api_client.dart';
 import '../../../models/video.dart';
 import '../../comments/screens/comments_sheet.dart';
@@ -55,6 +57,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   bool _modeMismatchWarning = false;
   String _modeMismatchMessage = '';
   final LocalVideoServer _localServer = LocalVideoServer();
+  WatchProgressTracker? _watchTracker;
 
   @override
   void initState() {
@@ -102,6 +105,12 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
       final manifest = await videoRepo.getVideoManifest(widget.lessonId);
 
       _manifest = manifest;
+
+      _watchTracker = WatchProgressTracker(
+        misc: context.read<MiscRepository>(),
+        lessonId: widget.lessonId,
+        deviceInfo: 'agent',
+      );
 
       if (manifest.streamingMode == 'direct') {
         await _loadAndPlayDirect();
@@ -159,20 +168,22 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     _playerErrorShown = false;
     _videoPlayerController?.addListener(() {
       final v = _videoPlayerController?.value;
-      if (v != null &&
-          v.hasError &&
-          !_playerErrorShown &&
-          mounted) {
-        _playerErrorShown = true;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Player error: ${v.errorDescription ?? 'unknown playback error'}',
+      if (v != null) {
+        _watchTracker?.update(v.position, v.duration);
+        if (v.hasError &&
+            !_playerErrorShown &&
+            mounted) {
+          _playerErrorShown = true;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Player error: ${v.errorDescription ?? 'unknown playback error'}',
+              ),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 8),
             ),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 8),
-          ),
-        );
+          );
+        }
       }
     });
   }
@@ -390,6 +401,8 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
         ),
       );
 
+      _watchTracker?.start();
+
       await oldController?.dispose();
       oldChewie?.dispose();
 
@@ -599,6 +612,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
 
   @override
   void dispose() {
+    _watchTracker?.dispose();
     _localServer.stop();
     _exitFullScreen();
     ScreenProtector.preventScreenshotOff();
