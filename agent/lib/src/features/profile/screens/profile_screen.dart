@@ -81,9 +81,7 @@ class ProfileScreen extends StatelessWidget {
               'Redeem Code',
               onTap: () => _showRedeemDialog(context),
             ),
-            if (user?.role == 'admin' ||
-                user?.role == 'super_admin' ||
-                user?.role == 'instructor')
+            if (user?.role == 'admin' || user?.role == 'super_admin')
               _buildProfileItem(
                 context,
                 LucideIcons.shield,
