@@ -56,7 +56,7 @@ class _SplashScreenState extends State<SplashScreen> {
         return;
       }
     } catch (e) {
-      print('Handshake failed: $e');
+      debugPrint('Handshake failed: $e');
     }
 
     await Future.delayed(const Duration(seconds: 1));
@@ -71,13 +71,20 @@ class _SplashScreenState extends State<SplashScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.medical_services, size: 80, color: Colors.white),
+            const Icon(Icons.school_rounded, size: 80, color: Colors.white),
             const SizedBox(height: 16),
             Text(
-              'beIN Med',
+              'LEC',
               style: Theme.of(
                 context,
               ).textTheme.displayLarge?.copyWith(color: Colors.white),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Learn. Engage. Complete.',
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: Colors.white70),
             ),
           ],
         ),
