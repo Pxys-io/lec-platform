@@ -9,6 +9,16 @@ LOCAL_MODE=0
 AUTO_CONFIRM=0
 PROD_MODE=0
 
+# Strong secrets for generated .env files (openssl rand). If openssl is
+# missing, fall back to /dev/urandom hex.
+if command -v openssl >/dev/null 2>&1; then
+  GEN_JWT=$(openssl rand -hex 32)
+  GEN_TOK=$(openssl rand -hex 24)
+else
+  GEN_JWT=$(head -c 64 /dev/urandom | od -An -tx1 | tr -d ' \n')
+  GEN_TOK=$(head -c 48 /dev/urandom | od -An -tx1 | tr -d ' \n')
+fi
+
 # Parse arguments
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -137,13 +147,13 @@ MAIN_SERVER_PORT=$MAIN_SERVER_PORT
 MAIN_SERVER_DEBUG=true
 MAIN_SERVER_URL=http://localhost:$MAIN_SERVER_PORT
 DATABASE_URL=sqlite:///./lec_main.db
-JWT_SECRET_KEY=dev-secret-key-change-in-production-abc123xyz
+JWT_SECRET_KEY=$GEN_JWT
 JWT_ALGORITHM=HS256
 JWT_ACCESS_TOKEN_EXPIRE_MINUTES=30
 JWT_REFRESH_TOKEN_EXPIRE_DAYS=7
 VIDEO_SERVER_BASE_URL=http://localhost:$VIDEO_SERVER_PORT
 VIDEO_SERVER_INTERNAL_URL=http://localhost:$VIDEO_SERVER_PORT
-VIDEO_SERVER_INTERNAL_TOKEN=dev-internal-token
+VIDEO_SERVER_INTERNAL_TOKEN=$GEN_TOK
 CORS_ORIGINS=http://localhost:3000,http://localhost:$DASHBOARD_PORT
 MAINENV
 
@@ -161,7 +171,8 @@ VIDEO_STORAGE_TYPE=local
 WATERMARK_DURATION_SECONDS=1
 WATERMARK_POSITION=bottom-right
 WATERMARK_OPACITY=0.7
-SECRET_KEY=video-server-secret-key-change-in-production
+SECRET_KEY=$GEN_JWT
+INTERNAL_AUTH_TOKEN=$GEN_TOK
 VIDENV
 
     if [ -n "$MUX_EXISTING" ]; then
@@ -296,13 +307,13 @@ MAIN_SERVER_PORT=$MAIN_SERVER_PORT
 MAIN_SERVER_DEBUG=true
 MAIN_SERVER_URL=$PUBLIC_URL_MAIN
 DATABASE_URL=sqlite:///./lec_main.db
-JWT_SECRET_KEY=dev-secret-key-change-in-production-abc123xyz
+JWT_SECRET_KEY=$GEN_JWT
 JWT_ALGORITHM=HS256
 JWT_ACCESS_TOKEN_EXPIRE_MINUTES=30
 JWT_REFRESH_TOKEN_EXPIRE_DAYS=7
 VIDEO_SERVER_BASE_URL=$PUBLIC_URL_VIDEO
 VIDEO_SERVER_INTERNAL_URL=http://localhost:$VIDEO_SERVER_PORT
-VIDEO_SERVER_INTERNAL_TOKEN=dev-internal-token
+VIDEO_SERVER_INTERNAL_TOKEN=$GEN_TOK
 CORS_ORIGINS=http://localhost:3000,http://localhost:$DASHBOARD_PORT,$PUBLIC_URL_MAIN,$PUBLIC_URL_VIDEO
 MAINENV
 
@@ -320,7 +331,8 @@ VIDEO_STORAGE_TYPE=local
 WATERMARK_DURATION_SECONDS=1
 WATERMARK_POSITION=bottom-right
 WATERMARK_OPACITY=0.7
-SECRET_KEY=video-server-secret-key-change-in-production
+SECRET_KEY=$GEN_JWT
+INTERNAL_AUTH_TOKEN=$GEN_TOK
 VIDENV
 
     if [ -n "$MUX_EXISTING" ]; then

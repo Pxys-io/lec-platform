@@ -19,7 +19,9 @@ class Settings(BaseSettings):
 
     VIDEO_SERVER_BASE_URL: str = "http://localhost:8001"
     VIDEO_SERVER_INTERNAL_URL: str = "http://localhost:8001"
-    VIDEO_SERVER_INTERNAL_TOKEN: str = "dev-internal-token"
+    # No working default: production MUST set this to a strong shared secret
+    # matching the video server's INTERNAL_AUTH_TOKEN.
+    VIDEO_SERVER_INTERNAL_TOKEN: str = ""
 
     CORS_ORIGINS: str = "http://localhost:3000,http://localhost:5173"
 
