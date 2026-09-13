@@ -9,6 +9,12 @@ class AuthRepository {
 
   AuthRepository({required this.apiClient});
 
+  /// Restores a persisted refresh token (e.g. after app restart) so the
+  /// automatic 401 refresh flow can recover without forcing a re-login.
+  void setRefreshToken(String? token) {
+    _refreshToken = token;
+  }
+
   Future<String> login(
     String email,
     String password, {

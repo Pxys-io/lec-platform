@@ -14,9 +14,11 @@ class AuthState extends Equatable {
   final User? user;
   final String? errorMessage;
 
-  AuthState({this.status = AuthStatus.initial, this.user, this.errorMessage}) {
-    print("Debug: auth state :${this} the state");
-  }
+  AuthState({
+    this.status = AuthStatus.initial,
+    this.user,
+    this.errorMessage,
+  });
 
   @override
   List<Object?> get props => [status, user, errorMessage];

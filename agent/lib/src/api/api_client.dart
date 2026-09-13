@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
@@ -13,12 +14,30 @@ class ApiException implements Exception {
 
 class ApiClient {
   final String baseUrl;
+  final Duration connectTimeout;
+  final Duration receiveTimeout;
+  final bool debugLogging;
+
   String? _token;
+  Future<bool>? _refreshFuture;
+
+  /// Called when a 401 is received. Must obtain a fresh access token and
+  /// return true so the failed request can be retried once. When it returns
+  /// false (or is null), [onUnauthorized] is invoked instead.
+  Future<bool> Function()? onRefresh;
+
+  /// Called when authentication can no longer be recovered (refresh failed,
+  /// no refresh configured) — e.g. force logout.
   void Function()? onUnauthorized;
 
   String? get token => _token;
 
-  ApiClient({required this.baseUrl});
+  ApiClient({
+    required this.baseUrl,
+    this.connectTimeout = const Duration(seconds: 20),
+    this.receiveTimeout = const Duration(seconds: 30),
+    this.debugLogging = false,
+  });
 
   void setToken(String token) {
     _token = token;
@@ -52,28 +71,80 @@ class ApiClient {
     String path, {
     Map<String, String>? queryParams,
     String? requestBody,
+    bool allowRetry = true,
   }) async {
     final uri = _buildUri(path, queryParams: queryParams);
     final headers = _getHeaders();
 
-    _printRequest(method, uri, headers, requestBody);
-
-    http.Response response;
-    switch (method) {
-      case 'GET':
-        response = await http.get(uri, headers: headers);
-      case 'POST':
-        response = await http.post(uri, headers: headers, body: requestBody);
-      case 'PUT':
-        response = await http.put(uri, headers: headers, body: requestBody);
-      case 'DELETE':
-        response = await http.delete(uri, headers: headers);
-      default:
-        throw ArgumentError('Unsupported method: $method');
+    if (debugLogging) {
+      _printRequest(method, uri, headers, requestBody);
     }
 
-    _printResponse(uri, response);
+    http.Response response;
+    try {
+      switch (method) {
+        case 'GET':
+          response = await http
+              .get(uri, headers: headers)
+              .timeout(receiveTimeout);
+        case 'POST':
+          response = await http
+              .post(uri, headers: headers, body: requestBody)
+              .timeout(receiveTimeout);
+        case 'PUT':
+          response = await http
+              .put(uri, headers: headers, body: requestBody)
+              .timeout(receiveTimeout);
+        case 'DELETE':
+          response = await http
+              .delete(uri, headers: headers)
+              .timeout(receiveTimeout);
+        default:
+          throw ArgumentError('Unsupported method: $method');
+      }
+    } on TimeoutException {
+      throw ApiException(0, 'Request timed out');
+    } on http.ClientException catch (e) {
+      throw ApiException(0, 'Network error: ${e.message}');
+    }
+
+    if (debugLogging) {
+      _printResponse(uri, response);
+    }
+
+    if (response.statusCode == 401 && allowRetry && onRefresh != null) {
+      final refreshed = await _refreshOnce();
+      if (refreshed) {
+        return _makeRequest(
+          method,
+          path,
+          queryParams: queryParams,
+          requestBody: requestBody,
+          allowRetry: false,
+        );
+      }
+    }
+
     return _handleResponse(response);
+  }
+
+  /// Shared in-flight refresh: concurrent 401s await the same refresh instead
+  /// of each firing their own (which would race the token rotation).
+  Future<bool> _refreshOnce() {
+    if (_refreshFuture != null) return _refreshFuture!;
+    final completer = Completer<bool>();
+    _refreshFuture = completer.future;
+    (() async {
+      try {
+        final ok = await onRefresh?.call() ?? false;
+        completer.complete(ok && _token != null);
+      } catch (_) {
+        completer.complete(false);
+      } finally {
+        _refreshFuture = null;
+      }
+    })();
+    return _refreshFuture!;
   }
 
   void _printRequest(
@@ -114,10 +185,6 @@ class ApiClient {
 
   static const _videoServerUrl = String.fromEnvironment(
     'VIDEO_SERVER_URL',
-    defaultValue: 'https://video.lec.pxysio.top',
-  );
-  static const _videoStreamUrl = String.fromEnvironment(
-    'VIDEO_STREAM_URL',
     defaultValue: 'https://video.lec.pxysio.top',
   );
 
@@ -172,7 +239,7 @@ class ApiClient {
 
     request.files.add(await http.MultipartFile.fromPath('file', filePath));
 
-    final streamedResponse = await request.send();
+    final streamedResponse = await request.send().timeout(receiveTimeout);
     final response = await http.Response.fromStream(streamedResponse);
 
     return _handleResponse(response);

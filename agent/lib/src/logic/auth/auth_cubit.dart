@@ -10,9 +10,19 @@ class AuthCubit extends HydratedCubit<AuthState> {
 
   AuthCubit(this._authRepository, this._backend) : super(AuthState()) {
     _authRepository.apiClient.onUnauthorized = forceLogout;
+    _authRepository.apiClient.onRefresh = _tryRefresh;
   }
 
   String? get token => _authRepository.apiClient.token;
+
+  Future<bool> _tryRefresh() async {
+    try {
+      await _authRepository.refresh();
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
 
   Future<void> login(String email, String password) async {
     emit(state.copyWith(status: AuthStatus.authenticating));
@@ -26,15 +36,8 @@ class AuthCubit extends HydratedCubit<AuthState> {
       final user = await _authRepository.getCurrentUser();
       emit(state.copyWith(status: AuthStatus.authenticated, user: user));
     } catch (e) {
-      final msg = e.toString();
-      String errorMessage;
-      if (msg.contains('Device limit exceeded') || msg.contains('429')) {
-        errorMessage = msg;
-      } else {
-        errorMessage = msg;
-      }
       emit(
-        state.copyWith(status: AuthStatus.failure, errorMessage: errorMessage),
+        state.copyWith(status: AuthStatus.failure, errorMessage: e.toString()),
       );
     }
   }
@@ -91,6 +94,9 @@ class AuthCubit extends HydratedCubit<AuthState> {
       if (status == AuthStatus.authenticated && json['token'] != null) {
         _authRepository.apiClient.setToken(json['token'] as String);
       }
+      if (json['refresh_token'] != null) {
+        _authRepository.setRefreshToken(json['refresh_token'] as String);
+      }
 
       return AuthState(status: status, user: user);
     } catch (e) {
@@ -104,6 +110,7 @@ class AuthCubit extends HydratedCubit<AuthState> {
       'status': state.status.name,
       'user': state.user?.toJson(),
       'token': _authRepository.apiClient.token,
+      'refresh_token': _authRepository.refreshToken,
     };
   }
 }
