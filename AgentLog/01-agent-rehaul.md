@@ -100,5 +100,11 @@ is frozen; the app conforms to it.
     (video server :9001 + cloudflared + fresh DBs); fails in this sandbox
     because the video server won't boot here — pre-existing environment
     limitation, not a rehaul regression.
-  - Release APK build running as final CI-equivalent check.
-- Next: mark DONE once release build passes; final report.
+  - Release APK build: **success** (73.4MB, Gradle assembleRelease) — the
+    CI-equivalent check.
+- **Plan 01 DONE.** All 10 steps complete. Analyzer 93 → 63 issues (0
+  errors); debug + release APKs build; 6/6 backend integration tests pass.
+  Follow-up candidates for Plan 02 (backend hardening, out of Flutter scope):
+  video-server `/internal/*` has zero auth (public raw originals + AES keys),
+  quiz/qbank questions leak `correct_answer` to students, `GET /users/me/courses`
+  500s, `/misc/upload` returns 404 URLs, dev JWT secret in prod `.env`.
