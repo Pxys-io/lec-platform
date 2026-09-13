@@ -50,6 +50,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   double _estimatedSpeedKbps = 0;
   String? _cacheDir;
   List<double> _watermarkTimes = [];
+  String? _loadError;
 
   bool _isDownloading = false;
   double _downloadProgress = 0;
@@ -105,6 +106,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
       final manifest = await videoRepo.getVideoManifest(widget.lessonId);
 
       _manifest = manifest;
+      _loadError = null;
 
       _watchTracker = WatchProgressTracker(
         misc: context.read<MiscRepository>(),
@@ -134,9 +136,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
       if (mounted) setState(() {});
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Failed to load video: $e')));
+        setState(() => _loadError = e.toString());
       }
     }
   }
@@ -411,13 +411,14 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
       dev.log('Loaded ${resolution.resolution}${_isLocal ? ' (LOCAL)' : ''}');
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to load ${resolution.resolution}: $e'),
-          ),
-        );
+        setState(() => _loadError = e.toString());
       }
     }
+  }
+
+  Future<void> _retry() async {
+    if (mounted) setState(() => _loadError = null);
+    await _initializePlayer();
   }
 
   Future<void> _startDownload(VideoResolution resolution) async {
@@ -662,7 +663,9 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
           _chewieController != null &&
                   _chewieController!.videoPlayerController.value.isInitialized
               ? Center(child: Chewie(controller: _chewieController!))
-              : const Center(child: CircularProgressIndicator()),
+              : _loadError != null
+                  ? _PlayerErrorView(message: _loadError!, onRetry: _retry)
+                  : const Center(child: CircularProgressIndicator()),
 
           if (_manifest != null)
             AnimatedPositioned(
@@ -906,6 +909,51 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+class _PlayerErrorView extends StatelessWidget {
+  final String message;
+  final VoidCallback onRetry;
+
+  const _PlayerErrorView({required this.message, required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(LucideIcons.videoOff, color: Colors.white70, size: 48),
+            const SizedBox(height: 16),
+            const Text(
+              'Could not load video',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              maxLines: 4,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: Colors.white54, fontSize: 13),
+            ),
+            const SizedBox(height: 24),
+            FilledButton.icon(
+              onPressed: onRetry,
+              icon: const Icon(LucideIcons.rotateCw),
+              label: const Text('Retry'),
+            ),
+          ],
+        ),
       ),
     );
   }
