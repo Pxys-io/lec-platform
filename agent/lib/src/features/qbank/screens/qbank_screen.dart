@@ -88,7 +88,7 @@ class _QBankScreenState extends State<QBankScreen> {
                           margin: const EdgeInsets.only(bottom: 8),
                           child: ListTile(
                             title: Text(session.title),
-                            subtitle: Text('${session.questionIds.length} Questions • ${session.score?.toStringAsFixed(1) ?? "In Progress"}%'),
+                            subtitle: Text('${session.questions.length} Questions • ${session.score?.toStringAsFixed(1) ?? "In Progress"}%'),
                             trailing: const Icon(LucideIcons.chevronRight),
                             onTap: () {
                               // context.push('/quiz-session', extra: session);
