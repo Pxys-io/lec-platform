@@ -68,6 +68,11 @@ class AuthCubit extends HydratedCubit<AuthState> {
     emit(AuthState(status: AuthStatus.unauthenticated));
   }
 
+  /// Applies a freshly fetched user object (e.g. after profile edits).
+  void updateUser(User user) {
+    emit(state.copyWith(user: user));
+  }
+
   void forceLogout() {
     _authRepository.apiClient.clearToken();
     emit(AuthState(status: AuthStatus.unauthenticated));
