@@ -15,6 +15,7 @@ from app.core.security import (
     get_current_user_id,
     get_optional_current_user_id,
     get_token_type,
+    needs_password_rehash,
 )
 from app.models import User, UserProfile, UserRole, UserActivity, UserDevice
 from app.schemas import (
@@ -37,6 +38,12 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
         )
+
+    # Incremental bcrypt migration: upgrade legacy SHA-256 hashes on the next
+    # successful login so verification is never blocked by a hash change.
+    if needs_password_rehash(user.password_hash):
+        user.password_hash = get_password_hash(request.password)
+        db.add(user)
 
     if user.banned_until and user.banned_until > datetime.utcnow():
         raise HTTPException(

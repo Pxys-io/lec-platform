@@ -22,7 +22,9 @@ from app.models.interaction import WatchHistory, Message, AccessCode, QBankEnrol
 
 
 def _hash(pw: str) -> str:
-    return hashlib.sha256(pw.encode()).hexdigest()
+    from app.core.security import get_password_hash
+
+    return get_password_hash(pw)
 
 
 def _id() -> str:

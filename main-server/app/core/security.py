@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 from jose import JWTError, jwt
 import hashlib
+import bcrypt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
@@ -12,12 +13,25 @@ security = HTTPBearer()
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    hash_bytes = hashlib.sha256(plain_password.encode()).hexdigest()
-    return hash_bytes == hashed_password
+    if hashed_password.startswith("$2"):
+        try:
+            return bcrypt.checkpw(
+                plain_password.encode(), hashed_password.encode()
+            )
+        except Exception:
+            return False
+    # Legacy SHA-256 hash (pre-bcrypt). Verified here; the caller upgrades it
+    # to bcrypt on a successful login (see auth.login).
+    return hashlib.sha256(plain_password.encode()).hexdigest() == hashed_password
 
 
 def get_password_hash(password: str) -> str:
-    return hashlib.sha256(password.encode()).hexdigest()
+    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+
+
+def needs_password_rehash(hashed_password: str) -> bool:
+    """True when the stored hash is the legacy SHA-256 format."""
+    return not hashed_password.startswith("$2")
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
