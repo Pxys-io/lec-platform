@@ -20,6 +20,10 @@ from app.schemas import (
     QBankSessionCreate,
     QBankSessionResponse,
     QBankSessionSubmit,
+    QBankSessionSubmitResponse,
+    QBankQuestionCheck,
+    QBankQuestionCheckResponse,
+    QuizQuestionResult,
 )
 from app.api.v1.users import get_current_user, require_instructor
 
@@ -476,7 +480,39 @@ def get_recent_sessions(
     return sessions
 
 
-@router.post("/sessions/{session_id}/submit", response_model=QBankSessionResponse)
+@router.post("/sessions/{session_id}/check", response_model=QBankQuestionCheckResponse)
+def check_qbank_answer(
+    session_id: str,
+    request: QBankQuestionCheck,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Tutor-mode per-question check: validates one answer and returns the
+    correct answer + explanation WITHOUT revealing the whole question set."""
+    session = db.get(QBankSession, session_id)
+    if not session or session.user_id != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Session not found"
+        )
+
+    question_ids = json.loads(session.questions_json)
+    question = db.get(Question, request.question_id)
+    if not question or question.id not in question_ids:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Question not in session"
+        )
+
+    correct = (
+        request.answer.strip().lower() == question.correct_answer.strip().lower()
+    )
+    return QBankQuestionCheckResponse(
+        correct=correct,
+        correct_answer=question.correct_answer,
+        explanation=question.explanation,
+    )
+
+
+@router.post("/sessions/{session_id}/submit", response_model=QBankSessionSubmitResponse)
 def submit_qbank_session(
     session_id: str,
     request: QBankSessionSubmit,
@@ -494,12 +530,23 @@ def submit_qbank_session(
 
     total_points = sum(q.points for q in questions)
     earned_points = 0
+    results: List[QuizQuestionResult] = []
 
     for question in questions:
         user_answer = request.answers.get(question.id, "").strip().lower()
         correct = question.correct_answer.strip().lower()
-        if user_answer == correct:
+        is_correct = user_answer == correct
+        if is_correct:
             earned_points += question.points
+        results.append(
+            QuizQuestionResult(
+                id=question.id,
+                user_answer=request.answers.get(question.id, ""),
+                correct_answer=question.correct_answer,
+                explanation=question.explanation,
+                is_correct=is_correct,
+            )
+        )
 
     score = (earned_points / total_points * 100) if total_points > 0 else 0
 
@@ -511,4 +558,16 @@ def submit_qbank_session(
     db.commit()
     db.refresh(session)
 
-    return session
+    return QBankSessionSubmitResponse(
+        id=session.id,
+        user_id=session.user_id,
+        qbank_id=session.qbank_id,
+        title=session.title,
+        config_json=session.config_json,
+        questions_json=session.questions_json,
+        answers_json=session.answers_json,
+        score=session.score,
+        completed_at=session.completed_at,
+        created_at=session.created_at,
+        questions=results,
+    )

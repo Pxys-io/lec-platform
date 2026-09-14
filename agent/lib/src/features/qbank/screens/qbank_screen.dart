@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../logic/qbank/qbank_cubit.dart';
 import '../../../models/qbank.dart';
+import '../../../repositories/quiz_repository.dart';
 
 class QBankScreen extends StatefulWidget {
   const QBankScreen({super.key});
@@ -88,11 +90,9 @@ class _QBankScreenState extends State<QBankScreen> {
                           margin: const EdgeInsets.only(bottom: 8),
                           child: ListTile(
                             title: Text(session.title),
-                            subtitle: Text('${session.questions.length} Questions • ${session.score?.toStringAsFixed(1) ?? "In Progress"}%'),
+                            subtitle: Text('${session.questionIds.length} Questions • ${session.score?.toStringAsFixed(1) ?? "In Progress"}%'),
                             trailing: const Icon(LucideIcons.chevronRight),
-                            onTap: () {
-                              // context.push('/quiz-session', extra: session);
-                            },
+                            onTap: () => _openSession(context, session),
                           ),
                         );
                       },
@@ -119,14 +119,39 @@ class _QBankScreenState extends State<QBankScreen> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      builder: (context) => _CreateSessionSheet(qbank: qbank),
+      builder: (context) => _CreateSessionSheet(
+        qbank: qbank,
+        onCreated: (session) => _openSession(context, session),
+      ),
     );
+  }
+
+  Future<void> _openSession(BuildContext context, QBankSession session) async {
+    try {
+      final quizRepo = context.read<QuizRepository>();
+      final all = await quizRepo.getQBankQuestions(session.qbankId);
+      final ids = session.questionIds.toSet();
+      final questions = all.where((q) => ids.contains(q.id)).toList();
+      if (!context.mounted) return;
+      context.push('/qbank-session', extra: {
+        'session': session,
+        'questions': questions,
+      });
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to load session: $e')),
+        );
+      }
+    }
   }
 }
 
 class _CreateSessionSheet extends StatefulWidget {
   final QBank qbank;
-  const _CreateSessionSheet({required this.qbank});
+  final ValueChanged<QBankSession> onCreated;
+
+  const _CreateSessionSheet({required this.qbank, required this.onCreated});
 
   @override
   State<_CreateSessionSheet> createState() => _CreateSessionSheetState();
@@ -197,14 +222,18 @@ class _CreateSessionSheetState extends State<_CreateSessionSheet> {
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
-              onPressed: () {
-                context.read<QBankCubit>().createSession(widget.qbank.id, {
+              onPressed: () async {
+                final session = await context
+                    .read<QBankCubit>()
+                    .createSession(widget.qbank.id, {
                   'title': '${widget.qbank.title} - ${DateTime.now().day}/${DateTime.now().month}',
                   'subjects': _selectedSubjects,
                   'mode': _mode,
                   'count': _count,
                 });
+                if (!context.mounted) return;
                 Navigator.pop(context);
+                if (session != null) widget.onCreated(session);
               },
               child: const Text('Start Session'),
             ),

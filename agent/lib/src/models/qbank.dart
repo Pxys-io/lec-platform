@@ -70,6 +70,7 @@ class QBankSession {
   final String qbankId;
   final String title;
   final Map<String, dynamic> config;
+  final List<String> questionIds;
   final List<Map<String, dynamic>> questions;
   final Map<String, dynamic> answers;
   final double? score;
@@ -82,6 +83,7 @@ class QBankSession {
     required this.qbankId,
     required this.title,
     this.config = const {},
+    this.questionIds = const [],
     this.questions = const [],
     this.answers = const {},
     this.score,
@@ -89,22 +91,39 @@ class QBankSession {
     required this.createdAt,
   });
 
-  factory QBankSession.fromJson(Map<String, dynamic> json) => QBankSession(
-        id: json['id'],
-        userId: json['user_id'],
-        qbankId: json['qbank_id'],
-        title: json['title'],
-        // config_json / questions_json / answers_json are JSON strings from
-        // the backend; decode them (tolerate already-decoded shapes).
-        config: _decodeJsonMap(json['config_json'] ?? json['config']),
-        questions: _decodeJsonList(json['questions_json'] ?? json['questions']),
-        answers: _decodeJsonMap(json['answers_json'] ?? json['answers']),
-        score: json['score']?.toDouble(),
-        completedAt: json['completed_at'] != null
-            ? DateTime.parse(json['completed_at'])
-            : null,
-        createdAt: DateTime.parse(json['created_at']),
-      );
+  factory QBankSession.fromJson(Map<String, dynamic> json) {
+    // questions_json is a list of question ID strings from the backend;
+    // tolerate already-decoded object lists too.
+    final ids = <String>[];
+    final maps = <Map<String, dynamic>>[];
+    final raw = json['questions_json'] ?? json['questions'];
+    dynamic decoded = raw;
+    if (raw is String) {
+      try { decoded = jsonDecode(raw); } catch (_) { decoded = null; }
+    }
+    if (decoded is List) {
+      for (final e in decoded) {
+        if (e is String) { ids.add(e); }
+        else if (e is Map) { maps.add(Map<String, dynamic>.from(e)); }
+      }
+    }
+    return QBankSession(
+      id: json['id'],
+      userId: json['user_id'],
+      qbankId: json['qbank_id'],
+      title: json['title'],
+      // config_json / answers_json are JSON strings from the backend.
+      config: _decodeJsonMap(json['config_json'] ?? json['config']),
+      questionIds: ids,
+      questions: maps,
+      answers: _decodeJsonMap(json['answers_json'] ?? json['answers']),
+      score: json['score']?.toDouble(),
+      completedAt: json['completed_at'] != null
+          ? DateTime.parse(json['completed_at'])
+          : null,
+      createdAt: DateTime.parse(json['created_at']),
+    );
+  }
 }
 
 Map<String, dynamic> _decodeJsonMap(dynamic value) {
@@ -119,27 +138,4 @@ Map<String, dynamic> _decodeJsonMap(dynamic value) {
     }
   }
   return {};
-}
-
-List<Map<String, dynamic>> _decodeJsonList(dynamic value) {
-  if (value == null) return [];
-  if (value is List) {
-    return value
-        .map((e) => e is Map ? Map<String, dynamic>.from(e) : <String, dynamic>{})
-        .toList();
-  }
-  if (value is String) {
-    try {
-      final decoded = jsonDecode(value);
-      if (decoded is List) {
-        return decoded
-            .map((e) => e is Map ? Map<String, dynamic>.from(e) : <String, dynamic>{})
-            .toList();
-      }
-      return [];
-    } catch (_) {
-      return [];
-    }
-  }
-  return [];
 }

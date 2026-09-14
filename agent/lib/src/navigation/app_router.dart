@@ -7,6 +7,7 @@ import '../features/auth/screens/register_screen.dart';
 import '../features/home/screens/home_screen.dart';
 import '../features/discover/screens/discover_screen.dart';
 import '../features/qbank/screens/qbank_screen.dart';
+import '../features/qbank/screens/qbank_session_screen.dart';
 import '../features/progress/screens/progress_screen.dart';
 import '../features/profile/screens/profile_screen.dart';
 import '../features/downloads/screens/downloads_screen.dart';
@@ -19,6 +20,7 @@ import '../features/admin/screens/admin_screen.dart';
 import '../widgets/main_wrapper.dart';
 import '../models/course.dart';
 import '../models/quiz.dart';
+import '../models/qbank.dart';
 
 import '../logic/auth/auth_cubit.dart';
 import '../logic/auth/auth_state.dart';
@@ -113,6 +115,16 @@ class AppRouter {
           return QuizSessionScreen(
             quiz: params['quiz'] as Quiz,
             isTutorMode: params['isTutorMode'] as bool? ?? true,
+          );
+        },
+      ),
+      GoRoute(
+        path: '/qbank-session',
+        builder: (context, state) {
+          final params = state.extra as Map<String, dynamic>;
+          return QBankSessionScreen(
+            session: params['session'] as QBankSession,
+            questions: (params['questions'] as List).cast<Question>(),
           );
         },
       ),

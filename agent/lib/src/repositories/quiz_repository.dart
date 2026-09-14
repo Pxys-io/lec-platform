@@ -89,10 +89,25 @@ class QuizRepository {
         .toList();
   }
 
-  Future<QBankSession> submitQBankSession(String sessionId, Map<String, String> answers) async {
+  /// Returns the raw submit response (includes per-question grading in
+  /// `questions` for the review screen).
+  Future<Map<String, dynamic>> submitQBankSession(String sessionId, Map<String, String> answers) async {
     final response = await apiClient.post('/qbanks/sessions/$sessionId/submit', body: {
       'answers': answers,
     });
-    return QBankSession.fromJson(Map<String, dynamic>.from(response as Map));
+    return Map<String, dynamic>.from(response as Map);
+  }
+
+  /// Tutor-mode per-question check. Returns {correct, correct_answer, explanation}.
+  Future<Map<String, dynamic>> checkQBankAnswer(
+    String sessionId,
+    String questionId,
+    String answer,
+  ) async {
+    final response = await apiClient.post('/qbanks/sessions/$sessionId/check', body: {
+      'question_id': questionId,
+      'answer': answer,
+    });
+    return Map<String, dynamic>.from(response as Map);
   }
   }

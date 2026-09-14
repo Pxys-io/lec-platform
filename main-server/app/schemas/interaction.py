@@ -1,6 +1,8 @@
-from typing import Optional
+from typing import Optional, List
 from pydantic import BaseModel
 from datetime import datetime
+
+from app.schemas.content import QuizQuestionResult
 
 
 class ReportCreate(BaseModel):
@@ -195,6 +197,24 @@ class QBankSessionResponse(BaseModel):
 
 class QBankSessionSubmit(BaseModel):
     answers: dict
+
+
+class QBankSessionSubmitResponse(QBankSessionResponse):
+    """QBankSessionResponse plus per-question grading, returned after submit
+    so students can review without answers leaking via GET."""
+
+    questions: List[QuizQuestionResult] = []
+
+
+class QBankQuestionCheck(BaseModel):
+    question_id: str
+    answer: str
+
+
+class QBankQuestionCheckResponse(BaseModel):
+    correct: bool
+    correct_answer: str
+    explanation: Optional[str] = None
 
 
 class ServerConfigCreate(BaseModel):

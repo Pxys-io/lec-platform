@@ -41,12 +41,14 @@ class QBankCubit extends Cubit<QBankState> {
     }
   }
 
-  Future<void> createSession(String qbankId, Map<String, dynamic> config) async {
+  Future<QBankSession?> createSession(String qbankId, Map<String, dynamic> config) async {
     try {
-      await _quizRepository.createQBankSession(qbankId, config);
+      final session = await _quizRepository.createQBankSession(qbankId, config);
       await loadQBanks();
+      return session;
     } catch (e) {
       emit(QBankFailure(e.toString()));
+      return null;
     }
   }
 
