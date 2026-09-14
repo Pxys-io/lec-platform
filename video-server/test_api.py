@@ -7,8 +7,28 @@ import json
 import os
 
 BASE_URL = "http://localhost:8001"
-API_PREFIX = f"{BASE_URL}/api/v1/internal/videos"
+API_PREFIX = f"{BASE_URL}/internal/videos"
 VIDEO_ID = ""
+
+
+def _internal_token():
+    """Read INTERNAL_AUTH_TOKEN from .env - the internal API now requires it."""
+    try:
+        with open(os.path.join(os.path.dirname(__file__), ".env")) as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("INTERNAL_AUTH_TOKEN="):
+                    return line.split("=", 1)[1]
+    except Exception:
+        pass
+    return ""
+
+
+HEADERS = (
+    {"Authorization": f"Bearer {_internal_token()}"}
+    if _internal_token()
+    else {}
+)
 
 
 def kill_server():
@@ -63,14 +83,14 @@ def main():
     try:
         # === Basic Tests ===
         def root():
-            r = requests.get(f"{BASE_URL}/", timeout=3)
+            r = requests.get(f"{BASE_URL}/", headers=HEADERS, timeout=3)
             return "LEC Video Server API" in r.text
         total += 1
         if test("Root Endpoint", root): passed += 1
         else: failed += 1
 
         def health():
-            r = requests.get(f"{BASE_URL}/health", timeout=3)
+            r = requests.get(f"{BASE_URL}/health", headers=HEADERS, timeout=3)
             return "healthy" in r.text
         total += 1
         if test("Health Check", health): passed += 1
@@ -87,7 +107,7 @@ def main():
                 "watermark_enabled": True,
                 "watermark_segments": 10,
                 "watermark_text": "user@example.com | ID: 12345"
-            }, timeout=3)
+            }, headers=HEADERS, timeout=3)
             if r.status_code != 200:
                 print(f"  Status: {r.status_code}, Body: {r.text}")
                 return False
@@ -100,7 +120,7 @@ def main():
         else: failed += 1
 
         def get_video():
-            r = requests.get(f"{API_PREFIX}/{VIDEO_ID}", timeout=3)
+            r = requests.get(f"{API_PREFIX}/{VIDEO_ID}", headers=HEADERS, timeout=3)
             if r.status_code != 200:
                 print(f"  Status: {r.status_code}, Body: {r.text}")
                 return False
@@ -121,7 +141,7 @@ def main():
                 "title": "Updated Lecture Video",
                 "description": "Updated description",
                 "status": "ready"
-            }, timeout=3)
+            }, headers=HEADERS, timeout=3)
             if r.status_code != 200:
                 print(f"  Status: {r.status_code}, Body: {r.text}")
                 return False
@@ -136,7 +156,7 @@ def main():
         else: failed += 1
 
         def list_videos():
-            r = requests.get(API_PREFIX, timeout=3)
+            r = requests.get(API_PREFIX, headers=HEADERS, timeout=3)
             if r.status_code != 200:
                 print(f"  Status: {r.status_code}, Body: {r.text}")
                 return False
@@ -151,7 +171,8 @@ def main():
         def start_transcode():
             r = requests.post(
                 f"{API_PREFIX}/{VIDEO_ID}/transcode?resolutions=360p,480p,720p",
-                timeout=3
+                timeout=3,
+                headers=HEADERS,
             )
             if r.status_code != 200:
                 print(f"  Status: {r.status_code}, Body: {r.text}")
@@ -160,13 +181,13 @@ def main():
             print(f"  Job ID: {data.get('id')}")
             print(f"  Status: {data.get('status')}")
             print(f"  Resolutions: {data.get('resolutions_requested')}")
-            return data.get("status") == "pending"
+            return data.get("status") in ("pending", "running")
         total += 1
         if test("Start Transcode Job", start_transcode): passed += 1
         else: failed += 1
 
         def get_transcode_status():
-            r = requests.get(f"{API_PREFIX}/{VIDEO_ID}/status", timeout=3)
+            r = requests.get(f"{API_PREFIX}/{VIDEO_ID}/status", headers=HEADERS, timeout=3)
             if r.status_code != 200:
                 print(f"  Status: {r.status_code}, Body: {r.text}")
                 return False
@@ -180,7 +201,7 @@ def main():
 
         # === Manifest & Streaming Tests ===
         def get_manifest():
-            r = requests.get(f"{API_PREFIX}/{VIDEO_ID}/manifest", timeout=3)
+            r = requests.get(f"{API_PREFIX}/{VIDEO_ID}/manifest", headers=HEADERS, timeout=3)
             print(f"  Status: {r.status_code}")
             if r.status_code == 400:
                 print(f"  Expected: No ready resolutions yet")
@@ -190,7 +211,7 @@ def main():
         else: failed += 1
 
         def get_stream_no_res():
-            r = requests.get(f"{API_PREFIX}/{VIDEO_ID}/stream", timeout=3)
+            r = requests.get(f"{API_PREFIX}/{VIDEO_ID}/stream", headers=HEADERS, timeout=3)
             print(f"  Status: {r.status_code}")
             if r.status_code == 404:
                 print(f"  Expected: No ready resolution")
@@ -200,7 +221,7 @@ def main():
         else: failed += 1
 
         def get_stream_with_res():
-            r = requests.get(f"{API_PREFIX}/{VIDEO_ID}/stream?resolution=720p", timeout=3)
+            r = requests.get(f"{API_PREFIX}/{VIDEO_ID}/stream?resolution=720p", headers=HEADERS, timeout=3)
             print(f"  Status: {r.status_code}")
             if r.status_code == 404:
                 print(f"  Expected: Resolution not ready")
@@ -218,7 +239,7 @@ def main():
                 "original_path": "/uploads/test_no_wm.mp4",
                 "watermark_enabled": False,
                 "watermark_segments": 0
-            }, timeout=3)
+            }, headers=HEADERS, timeout=3)
             if r.status_code != 200:
                 print(f"  Status: {r.status_code}, Body: {r.text}")
                 return False
@@ -226,7 +247,7 @@ def main():
             video_id = data.get("id", "")
             print(f"  Created video without watermark: {video_id}")
             
-            r2 = requests.get(f"{API_PREFIX}/{video_id}", timeout=3)
+            r2 = requests.get(f"{API_PREFIX}/{video_id}", headers=HEADERS, timeout=3)
             data2 = r2.json()
             print(f"  Watermark enabled: {data2.get('watermark_enabled')}")
             print(f"  Watermark segments: {data2.get('watermark_segments')}")
@@ -243,7 +264,7 @@ def main():
                 "original_path": "/uploads/test_high_wm.mp4",
                 "watermark_enabled": True,
                 "watermark_segments": 5
-            }, timeout=3)
+            }, headers=HEADERS, timeout=3)
             if r.status_code != 200:
                 print(f"  Status: {r.status_code}, Body: {r.text}")
                 return False
@@ -256,7 +277,7 @@ def main():
 
         # === Storage Tests ===
         def test_storage_path():
-            r = requests.get(f"{API_PREFIX}/{VIDEO_ID}", timeout=3)
+            r = requests.get(f"{API_PREFIX}/{VIDEO_ID}", headers=HEADERS, timeout=3)
             data = r.json()
             print(f"  Storage type: {data.get('storage_type')}")
             print(f"  Storage path: {data.get('storage_path')}")
@@ -274,7 +295,7 @@ def main():
                 "original_path": "/uploads/multi_res.mp4",
                 "watermark_enabled": True,
                 "watermark_segments": 10
-            }, timeout=3)
+            }, headers=HEADERS, timeout=3)
             if r.status_code != 200:
                 print(f"  Status: {r.status_code}, Body: {r.text}")
                 return False
@@ -282,7 +303,7 @@ def main():
             vid = data.get("id", "")
             print(f"  Created video: {vid}")
             
-            r2 = requests.post(f"{API_PREFIX}/{vid}/transcode?resolutions=360p,480p,720p,1080p", timeout=3)
+            r2 = requests.post(f"{API_PREFIX}/{vid}/transcode?resolutions=360p,480p,720p,1080p", headers=HEADERS, timeout=3)
             if r2.status_code != 200:
                 print(f"  Transcode Status: {r2.status_code}, Body: {r2.text}")
                 return False
@@ -295,7 +316,7 @@ def main():
 
         # === Segment Hashing Tests ===
         def test_segment_hashing():
-            r = requests.get(f"{API_PREFIX}/{VIDEO_ID}/status", timeout=3)
+            r = requests.get(f"{API_PREFIX}/{VIDEO_ID}/status", headers=HEADERS, timeout=3)
             data = r.json()
             print(f"  Video status: {data.get('status')}")
             print(f"  Resolutions: {data.get('resolutions')}")
@@ -306,7 +327,7 @@ def main():
 
         # === Playlist Generation Tests ===
         def test_playlist_generation():
-            r = requests.get(f"{API_PREFIX}/{VIDEO_ID}/playlist/720p", timeout=3)
+            r = requests.get(f"{API_PREFIX}/{VIDEO_ID}/playlist/720p", headers=HEADERS, timeout=3)
             print(f"  Status: {r.status_code}")
             if r.status_code == 404:
                 print(f"  Expected: No ready resolution yet")
@@ -317,7 +338,7 @@ def main():
 
         # === Delete Tests ===
         def delete_video():
-            r = requests.delete(f"{API_PREFIX}/{VIDEO_ID}", timeout=3)
+            r = requests.delete(f"{API_PREFIX}/{VIDEO_ID}", headers=HEADERS, timeout=3)
             if r.status_code != 200:
                 print(f"  Status: {r.status_code}, Body: {r.text}")
                 return False
@@ -328,7 +349,7 @@ def main():
         else: failed += 1
 
         def verify_delete():
-            r = requests.get(f"{API_PREFIX}/{VIDEO_ID}", timeout=3)
+            r = requests.get(f"{API_PREFIX}/{VIDEO_ID}", headers=HEADERS, timeout=3)
             if r.status_code != 404:
                 print(f"  Video still exists!")
                 return False
@@ -340,7 +361,7 @@ def main():
 
         # === Error Handling Tests ===
         def test_invalid_video():
-            r = requests.get(f"{API_PREFIX}/invalid-video-id-12345", timeout=3)
+            r = requests.get(f"{API_PREFIX}/invalid-video-id-12345", headers=HEADERS, timeout=3)
             if r.status_code != 404:
                 print(f"  Should return 404, got {r.status_code}")
                 return False
@@ -350,7 +371,7 @@ def main():
         else: failed += 1
 
         def test_invalid_resolution():
-            r = requests.get(f"{API_PREFIX}/{VIDEO_ID}/stream?resolution=9999p", timeout=3)
+            r = requests.get(f"{API_PREFIX}/{VIDEO_ID}/stream?resolution=9999p", headers=HEADERS, timeout=3)
             if r.status_code not in [200, 404]:
                 print(f"  Unexpected status: {r.status_code}")
                 return False
@@ -387,7 +408,7 @@ def main():
             global VIDEO_ID
             start = time.time()
             for i in range(50):
-                r = requests.get(f"{API_PREFIX}/{VIDEO_ID}", timeout=3)
+                r = requests.get(f"{API_PREFIX}/{VIDEO_ID}", headers=HEADERS, timeout=3)
             end = time.time()
             elapsed = end - start
             per_req = elapsed / 50
@@ -408,7 +429,7 @@ def main():
                     "title": f"Concurrent {i}",
                     "original_filename": f"concurrent_{i}.mp4",
                     "original_path": f"/uploads/concurrent_{i}.mp4"
-                }, timeout=5)
+                }, headers=HEADERS, timeout=5)
                 return r.status_code
             
             start = time.time()

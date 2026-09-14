@@ -295,6 +295,14 @@ def complete_upload(
     if settings.MUX_ENABLED:
         import threading
         from app.core.mux import mux_transcode
+        job = TranscodeJob(
+            video_id=upload_id,
+            status="running",
+            resolutions_requested="mux",
+            started_at=datetime.utcnow(),
+        )
+        db.add(job)
+        db.commit()
         threading.Thread(target=mux_transcode, args=(upload_id,), daemon=True).start()
     else:
         job = TranscodeJob(
@@ -458,6 +466,14 @@ async def upload_video(
     if settings.MUX_ENABLED:
         import threading
         from app.core.mux import mux_transcode
+        job = TranscodeJob(
+            video_id=video_id,
+            status="running",
+            resolutions_requested="mux",
+            started_at=datetime.utcnow(),
+        )
+        db.add(job)
+        db.commit()
         threading.Thread(target=mux_transcode, args=(video_id,), daemon=True).start()
     else:
         job = TranscodeJob(
@@ -721,22 +737,20 @@ def start_transcode(
     if settings.MUX_ENABLED:
         import threading
         from app.core.mux import mux_transcode
-        threading.Thread(target=mux_transcode, args=(video_id,), daemon=True).start()
+        job = TranscodeJob(
+            video_id=video_id,
+            status="running",
+            resolutions_requested=resolutions,
+            priority=priority,
+            started_at=datetime.utcnow(),
+        )
+        db.add(job)
         video.status = "transcoding"
         db.add(video)
         db.commit()
-        return TranscodeJobResponse(
-            id=str(uuid.uuid4()),
-            video_id=video_id,
-            status="running",
-            progress=0.0,
-            resolutions_requested=resolutions,
-            resolutions_completed="",
-            fail_count=0,
-            priority=priority,
-            transcode_method="mux",
-            created_at=datetime.utcnow(),
-        )
+        db.refresh(job)
+        threading.Thread(target=mux_transcode, args=(video_id,), daemon=True).start()
+        return job
 
     job = TranscodeJob(
         video_id=video_id,

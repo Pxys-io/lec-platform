@@ -17,7 +17,7 @@ from sqlmodel import select
 from app.core.config import settings
 from app.core.database import SessionLocal
 from app.core.encryption import generate_encryption_keypair, encrypt_segment_file, derive_segment_iv
-from app.models.video import Video, VideoResolution, VideoSegment
+from app.models.video import Video, VideoResolution, VideoSegment, TranscodeJob
 from app.core import storage
 
 
@@ -206,6 +206,29 @@ def _delete_mux_upload(upload_id: str):
         pass
 
 
+def _update_job(db, video_id: str, **fields):
+    """Create-or-update the TranscodeJob row for a MUX transcode so the
+    dashboard job list/status reflects real progress (was a fake UUID)."""
+    job = db.exec(
+        select(TranscodeJob)
+        .where(TranscodeJob.video_id == video_id)
+        .where(TranscodeJob.status.in_(["pending", "running"]))
+    ).first()
+    if job is None:
+        job = TranscodeJob(
+            video_id=video_id,
+            status="running",
+            resolutions_requested="mux",
+            priority=0,
+        )
+        db.add(job)
+    for key, value in fields.items():
+        setattr(job, key, value)
+    db.commit()
+    db.refresh(job)
+    return job
+
+
 def mux_transcode(video_id: str):
     db = SessionLocal()
     asset_id = None
@@ -219,6 +242,7 @@ def mux_transcode(video_id: str):
         video.transcode_method = "mux"
         db.add(video)
         db.commit()
+        _update_job(db, video_id, status="running", progress=5.0, started_at=datetime.utcnow())
 
         # Idempotent re-run: clear any previous resolution/segment records and R2 objects
         old_res = db.exec(select(VideoResolution).where(VideoResolution.video_id == video.id)).all()
@@ -249,12 +273,14 @@ def mux_transcode(video_id: str):
                 video.status = "error"
                 db.add(video)
                 db.commit()
+                _update_job(db, video_id, status="error", error_message=f"Upload {status['status']}")
                 return
             time.sleep(3)
         else:
             video.status = "error"
             db.add(video)
             db.commit()
+            _update_job(db, video_id, status="error", error_message="Upload timed out")
             return
 
         asset = _wait_for_asset(asset_id)
@@ -264,6 +290,7 @@ def mux_transcode(video_id: str):
             video.status = "error"
             db.add(video)
             db.commit()
+            _update_job(db, video_id, status="error", error_message="No playback IDs returned")
             return
 
         playback_id = playback_ids[0]["id"]
@@ -280,6 +307,7 @@ def mux_transcode(video_id: str):
             video.status = "error"
             db.add(video)
             db.commit()
+            _update_job(db, video_id, status="error", error_message="No variants in MUX master playlist")
             return
 
         video.width = variants[0]["width"]
@@ -402,11 +430,19 @@ def mux_transcode(video_id: str):
             db.add(res_record)
             completed_resolutions.append(res_name)
             db.commit()
+            # Rough progress: upload 5-15, asset 15-35, variants 35-95.
+            _frac = 35 + 60 * (len(completed_resolutions) / max(1, len(variants)))
+            _update_job(
+                db, video_id,
+                progress=min(95.0, _frac),
+                resolutions_completed=",".join(completed_resolutions),
+            )
 
         if not completed_resolutions:
             video.status = "error"
             db.add(video)
             db.commit()
+            _update_job(db, video_id, status="error", error_message="No resolutions completed")
             return
 
         video.storage_type = "r2"
@@ -433,6 +469,13 @@ def mux_transcode(video_id: str):
         video.status = "ready"
         db.add(video)
         db.commit()
+        _update_job(
+            db, video_id,
+            status="completed",
+            progress=100.0,
+            resolutions_completed=",".join(completed_resolutions),
+            completed_at=datetime.utcnow(),
+        )
 
         shutil.rmtree(temp_base, ignore_errors=True)
     except Exception as e:
@@ -443,6 +486,7 @@ def mux_transcode(video_id: str):
                 video.status = "error"
                 db.add(video)
                 db.commit()
+            _update_job(db, video_id, status="error", error_message=str(e)[:500])
         except Exception:
             pass
     finally:
