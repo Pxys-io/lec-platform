@@ -73,6 +73,7 @@ class ApiClient {
     Map<String, String>? queryParams,
     String? requestBody,
     bool allowRetry = true,
+    bool skipRefresh = false,
   }) async {
     final uri = _buildUri(path, queryParams: queryParams);
     final headers = _getHeaders();
@@ -113,7 +114,15 @@ class ApiClient {
       _printResponse(uri, response);
     }
 
-    if (response.statusCode == 401 && allowRetry && onRefresh != null) {
+    // The refresh request itself must NEVER trigger another refresh: if the
+    // stored refresh token is also stale (e.g. server secret rotated), the
+    // refresh POST 401s and re-entering _refreshOnce here would await the
+    // same in-flight future forever - a deadlock that hangs every request
+    // (home screen loads forever, logout included). skipRefresh breaks that.
+    if (response.statusCode == 401 &&
+        allowRetry &&
+        !skipRefresh &&
+        onRefresh != null) {
       final refreshed = await _refreshOnce();
       if (refreshed) {
         return _makeRequest(
@@ -122,6 +131,7 @@ class ApiClient {
           queryParams: queryParams,
           requestBody: requestBody,
           allowRetry: false,
+          skipRefresh: skipRefresh,
         );
       }
     }
@@ -203,12 +213,14 @@ class ApiClient {
     String path, {
     Map<String, dynamic>? body,
     Map<String, String>? queryParams,
+    bool skipRefresh = false,
   }) async {
     return _makeRequest(
       'POST',
       path,
       queryParams: queryParams,
       requestBody: body != null ? jsonEncode(body) : null,
+      skipRefresh: skipRefresh,
     );
   }
 

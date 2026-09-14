@@ -44,6 +44,9 @@ class AuthRepository {
     final response = await apiClient.post(
       '/auth/refresh',
       queryParams: {'refresh_token': _refreshToken ?? ''},
+      // Critical: never re-enter the 401-refresh path from the refresh
+      // request itself (deadlock when the refresh token is also stale).
+      skipRefresh: true,
     );
     final token = response['access_token'];
     _refreshToken = response['refresh_token'];
