@@ -15,6 +15,15 @@ class CourseRepository {
         .toList();
   }
 
+  /// Courses the current user owns/has access to (fixed backend 500 in
+  /// Plan 02). Used to hide Enroll on owned courses.
+  Future<List<Course>> getMyCourses() async {
+    final response = await apiClient.get('/users/me/courses');
+    return (response as List)
+        .map((e) => Course.fromJson(Map<String, dynamic>.from(e as Map)))
+        .toList();
+  }
+
   Future<List<Course>> getLatestCourses() async {
     final response = await apiClient.get('/courses/latest');
     return (response as List)

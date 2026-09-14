@@ -195,6 +195,7 @@ class _ContinueWatchingTile extends StatelessWidget {
           final user = context.read<AuthCubit>().state.user;
           context.push('/video-player', extra: {
             'lessonId': item['lesson_id'],
+            'courseId': item['course_id'],
             'userEmail': user?.email ?? '',
             'studentId': user?.id ?? '',
           });

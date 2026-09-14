@@ -103,6 +103,7 @@ class AppRouter {
           final params = state.extra as Map<String, dynamic>;
           return VideoPlayerScreen(
             lessonId: params['lessonId'] as String,
+            courseId: params['courseId'] as String?,
             userEmail: params['userEmail'] as String,
             studentId: params['studentId'] as String,
           );

@@ -3,14 +3,17 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../models/course.dart';
+import '../../../models/lesson.dart';
 import '../../../models/material.dart' as material_models;
 import '../../../models/quiz.dart';
 import '../../../repositories/quiz_repository.dart';
 import '../../../repositories/lesson_repository.dart';
 import '../../../logic/lesson/lesson_cubit.dart';
 import '../../../logic/auth/auth_cubit.dart';
+import '../../../logic/course/course_cubit.dart';
 import '../../../logic/downloads/downloads_cubit.dart';
 import '../../../logic/downloads/downloads_state.dart';
+import '../../../widgets/app_widgets.dart';
 import '../../report/report_dialog.dart';
 import '../../documents/screens/document_viewer_screen.dart';
 import 'enrollment_screen.dart';
@@ -31,16 +34,18 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
     context.read<LessonCubit>().loadLessons(widget.course.id);
   }
 
-  static bool _isLocked(lesson) {
+  static bool _isLocked(Lesson lesson) {
     // Backend lock values: none | previous_lesson | quiz ('locked' kept for
     // backward compatibility with older payloads).
     return lesson.lockType != 'none';
   }
 
-  Future<Quiz?> _loadQuizForLesson(BuildContext context, lesson) async {
+  Future<Quiz?> _loadQuizForLesson(BuildContext context, Lesson lesson) async {
+    final quizId = lesson.quizId;
+    if (quizId == null) return null;
     final quizRepo = context.read<QuizRepository>();
-    final quizData = await quizRepo.getQuiz(lesson.quizId);
-    final questions = await quizRepo.getQuizQuestions(lesson.quizId);
+    final quizData = await quizRepo.getQuiz(quizId);
+    final questions = await quizRepo.getQuizQuestions(quizId);
     return Quiz(
       id: quizData.id,
       lessonId: quizData.lessonId,
@@ -55,7 +60,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
 
   Future<bool> _openQuiz(
     BuildContext context,
-    lesson, {
+    Lesson lesson, {
     bool tutorMode = false,
   }) async {
     try {
@@ -80,11 +85,12 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
     }
   }
 
-  Future<void> _openVideo(BuildContext context, lesson) async {
+  Future<void> _openVideo(BuildContext context, Lesson lesson) async {
     final user = context.read<AuthCubit>().state.user;
     if (context.mounted) {
       await context.push('/video-player', extra: {
         'lessonId': lesson.id,
+        'courseId': lesson.courseId,
         'userEmail': user?.email ?? 'student@example.com',
         'studentId': user?.id ?? '0000',
       });
@@ -97,14 +103,13 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
 
   Future<void> _handleLockedTap(
     BuildContext context,
-    lesson,
-    List<dynamic> lessons,
+    Lesson lesson,
+    List<Lesson> lessons,
   ) async {
-    final sorted = List.of(lessons)
-      ..sort((a, b) => (a.order as int).compareTo(b.order as int));
-    dynamic prev;
+    final sorted = List.of(lessons)..sort((a, b) => a.order.compareTo(b.order));
+    Lesson? prev;
     for (final l in sorted) {
-      if ((l.order as int) < (lesson.order as int)) prev = l;
+      if (l.order < lesson.order) prev = l;
     }
     final message = lesson.lockType == 'quiz'
         ? 'This lesson is quiz-gated. Pass the previous lesson\u2019s quiz to unlock it.'
@@ -116,7 +121,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
       builder: (ctx) => AlertDialog(
         title: const Text('Lesson locked'),
         content: Text(goToQuiz
-            ? '$message\n\nPrevious: ${prev.title}'
+            ? '$message\n\nPrevious: ${prev?.title ?? ''}'
             : message),
         actions: [
           TextButton(
@@ -131,13 +136,13 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
         ],
       ),
     );
-    if (action == true && context.mounted) {
+    if (action == true && context.mounted && prev != null) {
       await _openQuiz(context, prev);
     }
   }
 
   Future<void> _openMaterials(
-      BuildContext context, lesson, List<material_models.Material> materials) async {
+      BuildContext context, Lesson lesson, List<material_models.Material> materials) async {
     if (!context.mounted) return;
     Navigator.of(context).push(
       MaterialPageRoute(
@@ -149,7 +154,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
     );
   }
 
-  Future<void> _handleLessonTap(BuildContext context, lesson) async {
+  Future<void> _handleLessonTap(BuildContext context, Lesson lesson) async {
     final state = context.read<LessonCubit>().state;
     final lessons =
         state is LessonLoaded ? state.lessons : [lesson];
@@ -289,7 +294,23 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
                     ],
                   ),
                   const SizedBox(height: 24),
-                  Text('Overview', style: Theme.of(context).textTheme.titleLarge),
+                  Row(
+                    children: [
+                      Text('Overview', style: Theme.of(context).textTheme.titleLarge),
+                      const SizedBox(width: 8),
+                      BlocBuilder<CourseCubit, CourseState>(
+                        builder: (context, courseState) {
+                          final owned = courseState is CourseLoaded &&
+                              courseState.ownedIds.contains(widget.course.id);
+                          if (!owned) return const SizedBox.shrink();
+                          return const AppStatusBadge(
+                            label: 'Enrolled',
+                            color: Colors.green,
+                          );
+                        },
+                      ),
+                    ],
+                  ),
                   const SizedBox(height: 8),
                   Text(
                     widget.course.description,
@@ -409,28 +430,35 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
           const SliverToBoxAdapter(child: SizedBox(height: 80)),
         ],
       ),
-      bottomSheet: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Theme.of(context).cardTheme.color,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 10,
-              offset: const Offset(0, -5),
+      bottomSheet: BlocBuilder<CourseCubit, CourseState>(
+        builder: (context, courseState) {
+          final owned = courseState is CourseLoaded &&
+              courseState.ownedIds.contains(widget.course.id);
+          if (owned) return const SizedBox.shrink();
+          return Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Theme.of(context).cardTheme.color,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 10,
+                  offset: const Offset(0, -5),
+                ),
+              ],
             ),
-          ],
-        ),
-        child: ElevatedButton(
-          onPressed: () {
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => EnrollmentScreen(course: widget.course),
-              ),
-            );
-          },
-          child: const Text('Enroll Now / Request Access'),
-        ),
+            child: ElevatedButton(
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => EnrollmentScreen(course: widget.course),
+                  ),
+                );
+              },
+              child: const Text('Enroll Now / Request Access'),
+            ),
+          );
+        },
       ),
     );
   }

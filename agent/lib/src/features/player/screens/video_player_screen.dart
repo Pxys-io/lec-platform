@@ -18,20 +18,29 @@ import '../logic/player_debug.dart';
 import '../widgets/player_error_view.dart';
 import '../widgets/player_overlays.dart';
 import '../widgets/quality_picker.dart';
+import '../widgets/up_next_card.dart';
 import '../../../repositories/video_repository.dart';
 import '../../../repositories/misc_repository.dart';
+import '../../../repositories/course_repository.dart';
+import '../../../repositories/quiz_repository.dart';
 import '../../../api/api_client.dart';
 import '../../../models/video.dart';
+import '../../../models/lesson.dart';
+import '../../../models/quiz.dart';
+import '../../../logic/stats/stats_cubit.dart';
+import 'package:go_router/go_router.dart';
 import '../../comments/screens/comments_sheet.dart';
 
 class VideoPlayerScreen extends StatefulWidget {
   final String lessonId;
+  final String? courseId;
   final String userEmail;
   final String studentId;
 
   const VideoPlayerScreen({
     super.key,
     required this.lessonId,
+    this.courseId,
     required this.userEmail,
     required this.studentId,
   });
@@ -65,6 +74,11 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   @override
   void initState() {
     super.initState();
+    try {
+      _statsCubit = context.read<StatsCubit>();
+    } catch (_) {
+      _statsCubit = null;
+    }
     _enterFullScreen();
     _protectScreen();
     WakelockPlus.enable();
@@ -195,12 +209,23 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
 
   bool _playerErrorShown = false;
 
+  // Up-next auto-advance (seek-proof: driven by max position reached).
+  bool _upNextTriggered = false;
+  Lesson? _upNextLesson;
+  bool _upNextAuto = true;
+  StatsCubit? _statsCubit;
+
   void _watchForPlayerErrors() {
     _playerErrorShown = false;
     _videoPlayerController?.addListener(() {
       final v = _videoPlayerController?.value;
       if (v != null) {
         _watchTracker?.update(v.position, v.duration);
+        // Seek-proof auto-advance: max position reached >= 90% fires once,
+        // whether by natural playback or seeking forward.
+        if ((_watchTracker?.isComplete ?? false) && !_upNextTriggered) {
+          _maybeShowUpNext();
+        }
         if (v.hasError &&
             !_playerErrorShown &&
             mounted) {
@@ -506,6 +531,92 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     await _initializePlayer();
   }
 
+  /// Shows the Up-next card once the lesson is >=90% watched. Flushes the
+  /// final progress first so `previous_lesson` gates are satisfied before
+  /// the next lesson's manifest is fetched.
+  Future<void> _maybeShowUpNext() async {
+    if (_upNextTriggered || !mounted) return;
+    final courseId = widget.courseId;
+    if (courseId == null || courseId.isEmpty) {
+      playerLog('up-next skipped: no courseId');
+      return;
+    }
+    _upNextTriggered = true;
+    try {
+      // Flush now (don't wait for dispose): the next lesson may be gated on
+      // this lesson's completion.
+      await _watchTracker?.report();
+      final lessons = await context.read<CourseRepository>().getCourseLessons(courseId);
+      lessons.sort((a, b) => a.order.compareTo(b.order));
+      final idx = lessons.indexWhere((l) => l.id == widget.lessonId);
+      final next = (idx >= 0 && idx + 1 < lessons.length) ? lessons[idx + 1] : null;
+      if (!mounted) return;
+      if (next == null) {
+        playerLog('up-next: last lesson, no advance');
+        return;
+      }
+      // previous_lesson gates are satisfied (we just hit >=90%); quiz gates
+      // are not - show the card without auto-play for those.
+      final auto = next.lockType != 'quiz';
+      playerLog('up-next: ${next.title} auto=$auto');
+      setState(() {
+        _upNextLesson = next;
+        _upNextAuto = auto;
+      });
+    } catch (e) {
+      playerLog('up-next lookup failed: $e');
+      if (mounted) setState(() => _upNextTriggered = false);
+    }
+  }
+
+  Future<Quiz?> _loadQuizForLesson(Lesson lesson) async {
+    final quizId = lesson.quizId;
+    if (quizId == null) return null;
+    final quizRepo = context.read<QuizRepository>();
+    final quizData = await quizRepo.getQuiz(quizId);
+    final questions = await quizRepo.getQuizQuestions(quizId);
+    return Quiz(
+      id: quizData.id,
+      lessonId: quizData.lessonId,
+      title: quizData.title,
+      description: quizData.description,
+      passingScore: quizData.passingScore,
+      timeLimit: quizData.timeLimit,
+      questions: questions.isNotEmpty ? questions : quizData.questions,
+      createdAt: quizData.createdAt,
+    );
+  }
+
+  Future<void> _playNext() async {
+    final next = _upNextLesson;
+    if (next == null || !mounted) return;
+    playerLog('up-next play: ${next.title}');
+    if (next.videoId != null) {
+      context.pushReplacement('/video-player', extra: {
+        'lessonId': next.id,
+        'courseId': widget.courseId,
+        'userEmail': widget.userEmail,
+        'studentId': widget.studentId,
+      });
+    } else if (next.quizId != null) {
+      try {
+        final quiz = await _loadQuizForLesson(next);
+        if (!mounted) return;
+        if (quiz == null) return;
+        context.pushReplacement('/quiz-session', extra: {
+          'quiz': quiz,
+          'isTutorMode': false,
+        });
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to load next quiz: $e')),
+          );
+        }
+      }
+    }
+  }
+
   Future<void> _startDownload(VideoResolution resolution) async {
     if (_isDownloading) return;
 
@@ -636,7 +747,9 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
 
   @override
   void dispose() {
-    _watchTracker?.dispose();
+    // Flush final progress FIRST, then reload stats so continue-watching
+    // picks up this session (sequential: GET must see the POSTed row).
+    _watchTracker?.dispose().then((_) => _statsCubit?.loadStats());
     _localServer.stop();
     _exitFullScreen();
     ScreenProtector.preventScreenshotOff();
@@ -679,6 +792,21 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
             ),
             onQualityTap: _showQualityPicker,
           ),
+
+          if (_upNextLesson != null)
+            UpNextCard(
+              nextTitle: _upNextLesson!.title,
+              subtitle: _upNextLesson!.videoId != null
+                  ? 'Video lesson'
+                  : _upNextLesson!.quizId != null
+                      ? 'Quiz'
+                      : 'Lesson',
+              autoPlay: _upNextAuto,
+              onPlayNow: _playNext,
+              onDismiss: () {
+                if (mounted) setState(() => _upNextLesson = null);
+              },
+            ),
         ],
       ),
     );
