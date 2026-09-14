@@ -45,3 +45,7 @@ venv/
 agent/.dart_tool/
 agent/pubspec.lock
 .nvimlog
+
+# Runtime uploads & sqlite journals
+main-server/uploads/
+*.db-journal
