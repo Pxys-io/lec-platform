@@ -65,6 +65,27 @@ import hashlib
 from sqlmodel import func
 
 
+def rewrite_video_server_urls_to_proxy(content: str, proxy_base: str) -> str:
+    """Rewrite every absolute video-server `/internal/videos/...` URL in a
+    playlist to the authenticated main-server proxy. Host-agnostic: matches
+    the path, not any configured origin (env values go stale; localhost vs
+    public domains vary). Already-proxied URLs are left untouched."""
+    import re
+
+    def _repl(m: "re.Match") -> str:
+        url = m.group(0)
+        if "/videos/proxy/" in url:
+            return url
+        path = re.sub(r"^https?://[^/\s\"]+", "", url)
+        return proxy_base + path
+
+    return re.sub(
+        r"https?://[^/\s\"]+/internal/videos/[^\s\"]*",
+        _repl,
+        content,
+    )
+
+
 materials_router = APIRouter(prefix="/materials", tags=["materials"])
 codes_router = APIRouter(prefix="/codes", tags=["codes"])
 reports_router = APIRouter(prefix="/reports", tags=["reports"])
@@ -1135,23 +1156,10 @@ async def proxy_video_playlist(
 
         content = r.text
         correct_base = settings.MAIN_SERVER_URL.rstrip("/") + "/api/v1/videos/proxy"
-        # Rewrite EVERY video-server origin (localhost dev + public prod base)
-        # to the authenticated main-server proxy so segment/key/watermark
-        # fetches always carry access control.
-        _vs_origins = "|".join(
-            re.escape(o.rstrip("/"))
-            for o in {
-                settings.VIDEO_SERVER_INTERNAL_URL,
-                settings.VIDEO_SERVER_BASE_URL,
-                "http://localhost:8001",
-            }
-            if o
-        )
-        content = re.sub(
-            rf"https?://(?:{_vs_origins})/",
-            correct_base + "/",
-            content,
-        )
+        # Rewrite EVERY video-server /internal/videos URL to the
+        # authenticated main-server proxy so segment/key/watermark fetches
+        # always carry access control (raw video-server URLs 401).
+        content = rewrite_video_server_urls_to_proxy(content, correct_base)
         # Native players (Safari AVPlayer) authenticate via ?token= instead of
         # headers, so the AES-128 key / watermark URLs inside the playlist must
         # carry it - otherwise key fetches 401. Only when the caller itself
@@ -1855,11 +1863,7 @@ async def get_manage_video_playlist(
 
     content = r.text
     correct_base = settings.MAIN_SERVER_URL.rstrip("/") + "/api/v1/videos/proxy"
-    content = re.sub(
-        r"https?://(?:localhost|127\.0\.0\.1):8001(?:/api/v1)?/",
-        correct_base + "/",
-        content,
-    )
+    content = rewrite_video_server_urls_to_proxy(content, correct_base)
     # Same ?token= passthrough as the student playlist endpoint (Safari preview).
     _qtok = request.query_params.get("token")
     if _qtok:
