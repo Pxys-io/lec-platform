@@ -22,7 +22,14 @@ def start_server():
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL
     )
-    time.sleep(3)
+    # Poll /health instead of a fixed sleep so slow boots don't flake.
+    for _ in range(20):
+        try:
+            import urllib.request
+            urllib.request.urlopen("http://localhost:8000/health", timeout=1)
+            break
+        except Exception:
+            time.sleep(0.5)
     return proc
 
 

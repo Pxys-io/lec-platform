@@ -1543,20 +1543,24 @@ async def list_manage_videos(
 
     async with httpx.AsyncClient() as client:
         headers = {"Authorization": f"Bearer {settings.VIDEO_SERVER_INTERNAL_TOKEN}"}
-        params = {"skip": skip, "limit": limit}
-        # If we filter by created_by at the API level, we miss the ones assigned to lessons
-        # So we fetch all if there's a filter, and filter locally instead, matching the old behavior
-        # plus the new "pool" behavior.
-        # Actually, let's fetch all (up to 500) and filter locally.
-
-        r = await client.get(
-            f"{settings.VIDEO_SERVER_INTERNAL_URL}/internal/videos",
-            params={"skip": 0, "limit": 500},
-            headers=headers,
-        )
-        if r.status_code != 200:
-            raise HTTPException(status_code=500, detail=f"Video server error: {r.text}")
-        videos = r.json()
+        # Fetch ALL videos from the video server (paginated) so local
+        # instructor filtering + skip/limit are correct regardless of total.
+        videos = []
+        page_skip = 0
+        page_size = 500
+        while True:
+            r = await client.get(
+                f"{settings.VIDEO_SERVER_INTERNAL_URL}/internal/videos",
+                params={"skip": page_skip, "limit": page_size},
+                headers=headers,
+            )
+            if r.status_code != 200:
+                raise HTTPException(status_code=500, detail=f"Video server error: {r.text}")
+            page = r.json()
+            videos.extend(page)
+            if len(page) < page_size:
+                break
+            page_skip += page_size
 
     if user_id_filter:
         # Include videos created by the instructor OR assigned to their lessons
@@ -1569,23 +1573,24 @@ async def list_manage_videos(
     return videos[skip : skip + limit]
 
 
-@videos_router.get("/manage/{video_id}", tags=["videos"])
-async def get_manage_video(
-    video_id: str,
-    db: Session = Depends(get_db),
-    user: User = Depends(require_instructor),
-):
+async def _get_manage_video_or_403(video_id: str, db: Session, user: User) -> dict:
+    """Fetch a video from the video server, enforcing instructor ownership:
+    instructors may only access videos they created OR that are assigned to
+    one of their lessons. Admins/super_admins pass through."""
     from app.core.config import settings
     import httpx
 
     if user.role == UserRole.INSTRUCTOR:
         courses = db.exec(select(Course).where(Course.instructor_id == user.id)).all()
-        lesson = db.exec(
-            select(Lesson).where(
-                (Lesson.video_id == video_id)
-                & (Lesson.course_id.in_([c.id for c in courses]))
-            )
-        ).first()
+        course_ids = [c.id for c in courses]
+        lesson = None
+        if course_ids:
+            lesson = db.exec(
+                select(Lesson).where(
+                    (Lesson.video_id == video_id)
+                    & (Lesson.course_id.in_(course_ids))
+                )
+            ).first()
         if not lesson:
             async with httpx.AsyncClient() as client:
                 headers = {
@@ -1595,18 +1600,17 @@ async def get_manage_video(
                     f"{settings.VIDEO_SERVER_INTERNAL_URL}/internal/videos/{video_id}",
                     headers=headers,
                 )
-                if r.status_code == 200:
-                    video_data = r.json()
-                    owner_id = video_data.get("created_by")
-                    if str(owner_id) != str(user.id):
-                        raise HTTPException(
-                            status_code=403,
-                            detail=f"Access denied (Video owner: {owner_id}, You: {user.id})",
-                        )
-                else:
+                if r.status_code != 200:
                     raise HTTPException(
                         status_code=r.status_code,
                         detail="Video not found on video server",
+                    )
+                video_data = r.json()
+                owner_id = video_data.get("created_by")
+                if str(owner_id) != str(user.id):
+                    raise HTTPException(
+                        status_code=403,
+                        detail=f"Access denied (Video owner: {owner_id}, You: {user.id})",
                     )
 
     async with httpx.AsyncClient() as client:
@@ -1620,6 +1624,15 @@ async def get_manage_video(
         return r.json()
 
 
+@videos_router.get("/manage/{video_id}", tags=["videos"])
+async def get_manage_video(
+    video_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_instructor),
+):
+    return await _get_manage_video_or_403(video_id, db, user)
+
+
 @videos_router.put("/manage/{video_id}", tags=["videos"])
 async def update_manage_video(
     video_id: str,
@@ -1627,39 +1640,10 @@ async def update_manage_video(
     db: Session = Depends(get_db),
     user: User = Depends(require_instructor),
 ):
+    await _get_manage_video_or_403(video_id, db, user)
+
     from app.core.config import settings
     import httpx
-
-    if user.role == UserRole.INSTRUCTOR:
-        courses = db.exec(select(Course).where(Course.instructor_id == user.id)).all()
-        lesson = db.exec(
-            select(Lesson).where(
-                (Lesson.video_id == video_id)
-                & (Lesson.course_id.in_([c.id for c in courses]))
-            )
-        ).first()
-        if not lesson:
-            async with httpx.AsyncClient() as client:
-                headers = {
-                    "Authorization": f"Bearer {settings.VIDEO_SERVER_INTERNAL_TOKEN}"
-                }
-                r = await client.get(
-                    f"{settings.VIDEO_SERVER_INTERNAL_URL}/internal/videos/{video_id}",
-                    headers=headers,
-                )
-                if r.status_code == 200:
-                    video_data = r.json()
-                    owner_id = video_data.get("created_by")
-                    if str(owner_id) != str(user.id):
-                        raise HTTPException(
-                            status_code=403,
-                            detail=f"Access denied (Video owner: {owner_id}, You: {user.id})",
-                        )
-                else:
-                    raise HTTPException(
-                        status_code=r.status_code,
-                        detail="Video not found on video server",
-                    )
 
     async with httpx.AsyncClient() as client:
         headers = {"Authorization": f"Bearer {settings.VIDEO_SERVER_INTERNAL_TOKEN}"}
@@ -1679,39 +1663,10 @@ async def delete_manage_video(
     db: Session = Depends(get_db),
     user: User = Depends(require_instructor),
 ):
+    await _get_manage_video_or_403(video_id, db, user)
+
     from app.core.config import settings
     import httpx
-
-    if user.role == UserRole.INSTRUCTOR:
-        courses = db.exec(select(Course).where(Course.instructor_id == user.id)).all()
-        lesson = db.exec(
-            select(Lesson).where(
-                (Lesson.video_id == video_id)
-                & (Lesson.course_id.in_([c.id for c in courses]))
-            )
-        ).first()
-        if not lesson:
-            async with httpx.AsyncClient() as client:
-                headers = {
-                    "Authorization": f"Bearer {settings.VIDEO_SERVER_INTERNAL_TOKEN}"
-                }
-                r = await client.get(
-                    f"{settings.VIDEO_SERVER_INTERNAL_URL}/internal/videos/{video_id}",
-                    headers=headers,
-                )
-                if r.status_code == 200:
-                    video_data = r.json()
-                    owner_id = video_data.get("created_by")
-                    if str(owner_id) != str(user.id):
-                        raise HTTPException(
-                            status_code=403,
-                            detail=f"Access denied (Video owner: {owner_id}, You: {user.id})",
-                        )
-                else:
-                    raise HTTPException(
-                        status_code=r.status_code,
-                        detail="Video not found on video server",
-                    )
 
     async with httpx.AsyncClient() as client:
         headers = {"Authorization": f"Bearer {settings.VIDEO_SERVER_INTERNAL_TOKEN}"}
@@ -1768,54 +1723,18 @@ async def kill_manage_job(
             headers = {
                 "Authorization": f"Bearer {settings.VIDEO_SERVER_INTERNAL_TOKEN}"
             }
-            # First get the job to find the video_id
             jr = await client.get(
                 f"{settings.VIDEO_SERVER_INTERNAL_URL}/internal/videos/jobs",
                 headers=headers,
             )
-            if jr.status_code == 200:
-                jobs = jr.json()
-                job = next((j for j in jobs if j["id"] == job_id), None)
-                if not job:
-                    raise HTTPException(status_code=404, detail="Job not found")
-
-                video_id = job["video_id"]
-                # Now check video ownership
-                vr = await client.get(
-                    f"{settings.VIDEO_SERVER_INTERNAL_URL}/internal/videos/{video_id}",
-                    headers=headers,
-                )
-                if vr.status_code == 200:
-                    video_data = vr.json()
-                    owner_id = video_data.get("created_by")
-                    if str(owner_id) != str(user.id):
-                        # Also check if it's assigned to one of their lessons
-                        courses = db.exec(
-                            select(Course).where(Course.instructor_id == user.id)
-                        ).all()
-                        course_ids = [c.id for c in courses]
-                        lesson = None
-                        if course_ids:
-                            lesson = db.exec(
-                                select(Lesson).where(
-                                    (Lesson.video_id == video_id)
-                                    & (Lesson.course_id.in_(course_ids))
-                                )
-                            ).first()
-                        if not lesson:
-                            raise HTTPException(
-                                status_code=403,
-                                detail=f"Access denied (Video owner: {owner_id}, You: {user.id})",
-                            )
-                else:
-                    raise HTTPException(
-                        status_code=vr.status_code,
-                        detail="Video not found on video server",
-                    )
-            else:
+            if jr.status_code != 200:
                 raise HTTPException(
                     status_code=500, detail="Failed to fetch jobs from video server"
                 )
+            job = next((j for j in jr.json() if j["id"] == job_id), None)
+            if not job:
+                raise HTTPException(status_code=404, detail="Job not found")
+        await _get_manage_video_or_403(job["video_id"], db, user)
 
     async with httpx.AsyncClient() as client:
         headers = {"Authorization": f"Bearer {settings.VIDEO_SERVER_INTERNAL_TOKEN}"}
@@ -1835,39 +1754,10 @@ async def transcode_manage_video(
     db: Session = Depends(get_db),
     user: User = Depends(require_instructor),
 ):
+    await _get_manage_video_or_403(video_id, db, user)
+
     from app.core.config import settings
     import httpx
-
-    if user.role == UserRole.INSTRUCTOR:
-        courses = db.exec(select(Course).where(Course.instructor_id == user.id)).all()
-        lesson = db.exec(
-            select(Lesson).where(
-                (Lesson.video_id == video_id)
-                & (Lesson.course_id.in_([c.id for c in courses]))
-            )
-        ).first()
-        if not lesson:
-            async with httpx.AsyncClient() as client:
-                headers = {
-                    "Authorization": f"Bearer {settings.VIDEO_SERVER_INTERNAL_TOKEN}"
-                }
-                r = await client.get(
-                    f"{settings.VIDEO_SERVER_INTERNAL_URL}/internal/videos/{video_id}",
-                    headers=headers,
-                )
-                if r.status_code == 200:
-                    video_data = r.json()
-                    owner_id = video_data.get("created_by")
-                    if str(owner_id) != str(user.id):
-                        raise HTTPException(
-                            status_code=403,
-                            detail=f"Access denied (Video owner: {owner_id}, You: {user.id})",
-                        )
-                else:
-                    raise HTTPException(
-                        status_code=r.status_code,
-                        detail="Video not found on video server",
-                    )
 
     async with httpx.AsyncClient() as client:
         headers = {"Authorization": f"Bearer {settings.VIDEO_SERVER_INTERNAL_TOKEN}"}
@@ -1887,40 +1777,10 @@ async def get_manage_video_manifest(
     db: Session = Depends(get_db),
     user: User = Depends(require_instructor),
 ):
+    await _get_manage_video_or_403(video_id, db, user)
+
     from app.core.config import settings
     import httpx
-
-    # Basic ownership check for instructors
-    if user.role == UserRole.INSTRUCTOR:
-        courses = db.exec(select(Course).where(Course.instructor_id == user.id)).all()
-        lesson = db.exec(
-            select(Lesson).where(
-                (Lesson.video_id == video_id)
-                & (Lesson.course_id.in_([c.id for c in courses]))
-            )
-        ).first()
-        if not lesson:
-            # Also check if they created it but it's not assigned yet
-            async with httpx.AsyncClient() as client:
-                headers = {
-                    "Authorization": f"Bearer {settings.VIDEO_SERVER_INTERNAL_TOKEN}"
-                }
-                r = await client.get(
-                    f"{settings.VIDEO_SERVER_INTERNAL_URL}/internal/videos/{video_id}",
-                    headers=headers,
-                )
-                if r.status_code == 200:
-                    video_data = r.json()
-                    owner_id = video_data.get("created_by")
-                    if str(owner_id) != str(user.id):
-                        raise HTTPException(
-                            status_code=403,
-                            detail=f"Access denied (Video owner: {owner_id}, You: {user.id})",
-                        )
-                else:
-                    raise HTTPException(
-                        status_code=r.status_code, detail="Video not found"
-                    )
 
     async with httpx.AsyncClient() as client:
         headers = {"Authorization": f"Bearer {settings.VIDEO_SERVER_INTERNAL_TOKEN}"}
@@ -1943,37 +1803,7 @@ async def proxy_raw_video(
     import httpx
     from fastapi.responses import StreamingResponse
 
-    # Ownership check
-    if user.role == UserRole.INSTRUCTOR:
-        courses = db.exec(select(Course).where(Course.instructor_id == user.id)).all()
-        lesson = db.exec(
-            select(Lesson).where(
-                (Lesson.video_id == video_id)
-                & (Lesson.course_id.in_([c.id for c in courses]))
-            )
-        ).first()
-        if not lesson:
-            async with httpx.AsyncClient() as client:
-                headers = {
-                    "Authorization": f"Bearer {settings.VIDEO_SERVER_INTERNAL_TOKEN}"
-                }
-                r = await client.get(
-                    f"{settings.VIDEO_SERVER_INTERNAL_URL}/internal/videos/{video_id}",
-                    headers=headers,
-                )
-                if r.status_code == 200:
-                    video_data = r.json()
-                    owner_id = video_data.get("created_by")
-                    if str(owner_id) != str(user.id):
-                        raise HTTPException(
-                            status_code=403,
-                            detail=f"Access denied (Video owner: {owner_id}, You: {user.id})",
-                        )
-                else:
-                    raise HTTPException(
-                        status_code=r.status_code,
-                        detail="Video not found on video server",
-                    )
+    await _get_manage_video_or_403(video_id, db, user)
 
     async def stream_video():
         async with httpx.AsyncClient() as client:
@@ -2007,37 +1837,7 @@ async def get_manage_video_playlist(
     from app.core.config import settings
     import httpx
 
-    # Basic ownership check for instructors
-    if user.role == UserRole.INSTRUCTOR:
-        courses = db.exec(select(Course).where(Course.instructor_id == user.id)).all()
-        lesson = db.exec(
-            select(Lesson).where(
-                (Lesson.video_id == video_id)
-                & (Lesson.course_id.in_([c.id for c in courses]))
-            )
-        ).first()
-        if not lesson:
-            async with httpx.AsyncClient() as client:
-                headers = {
-                    "Authorization": f"Bearer {settings.VIDEO_SERVER_INTERNAL_TOKEN}"
-                }
-                r = await client.get(
-                    f"{settings.VIDEO_SERVER_INTERNAL_URL}/internal/videos/{video_id}",
-                    headers=headers,
-                )
-                if r.status_code == 200:
-                    video_data = r.json()
-                    owner_id = video_data.get("created_by")
-                    if str(owner_id) != str(user.id):
-                        raise HTTPException(
-                            status_code=403,
-                            detail=f"Access denied (Video owner: {owner_id}, You: {user.id})",
-                        )
-                else:
-                    raise HTTPException(
-                        status_code=r.status_code,
-                        detail="Video not found on video server",
-                    )
+    await _get_manage_video_or_403(video_id, db, user)
 
     async with httpx.AsyncClient() as client:
         headers = {"Authorization": f"Bearer {settings.VIDEO_SERVER_INTERNAL_TOKEN}"}
