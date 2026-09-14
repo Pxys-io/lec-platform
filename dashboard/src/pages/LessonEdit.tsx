@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import { ArrowLeft, Save, X, Trash2, Video, Search, HelpCircle } from 'lucide-react'
 import VideoSelector from '../components/VideoSelector'
+import MaterialManager from '../components/MaterialManager'
 
 interface Lesson {
   id: string
@@ -264,6 +265,8 @@ export default function LessonEdit() {
             </button>
           )}
       </div>
+
+      {id && <MaterialManager lessonId={String(id)} />}
 
       <div className="flex items-center justify-between pt-4">
         <button

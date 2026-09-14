@@ -194,8 +194,7 @@ export default function CourseDetail() {
             <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
               <FileText className="h-5 w-5" />
               Lessons ({lessons?.length || 0})
-            </h2>
-            {isInstructor && (
+            </h2>            {isInstructor && (
               <button
                 onClick={() => setShowCreate(true)}
                 className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors text-sm font-medium"
@@ -205,6 +204,9 @@ export default function CourseDetail() {
               </button>
             )}
           </div>
+          <p className="text-xs text-gray-400 -mt-3">
+            Tip: open a lesson to attach PDFs, documents, images or webpage links via the Materials section.
+          </p>
 
           {showCreate && (
             <div className="bg-surface rounded-xl border border-border p-6">

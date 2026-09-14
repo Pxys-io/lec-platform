@@ -3,8 +3,8 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../models/course.dart';
+import '../../../models/material.dart' as material_models;
 import '../../../models/quiz.dart';
-import '../../../models/lesson.dart';
 import '../../../repositories/quiz_repository.dart';
 import '../../../repositories/lesson_repository.dart';
 import '../../../logic/lesson/lesson_cubit.dart';
@@ -31,18 +31,16 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
     context.read<LessonCubit>().loadLessons(widget.course.id);
   }
 
-  static bool _isLocked(Lesson lesson) {
+  static bool _isLocked(lesson) {
     // Backend lock values: none | previous_lesson | quiz ('locked' kept for
     // backward compatibility with older payloads).
     return lesson.lockType != 'none';
   }
 
-  Future<Quiz?> _loadQuizForLesson(BuildContext context, Lesson lesson) async {
-    final quizId = lesson.quizId;
-    if (quizId == null) return null;
+  Future<Quiz?> _loadQuizForLesson(BuildContext context, lesson) async {
     final quizRepo = context.read<QuizRepository>();
-    final quizData = await quizRepo.getQuiz(quizId);
-    final questions = await quizRepo.getQuizQuestions(quizId);
+    final quizData = await quizRepo.getQuiz(lesson.quizId);
+    final questions = await quizRepo.getQuizQuestions(lesson.quizId);
     return Quiz(
       id: quizData.id,
       lessonId: quizData.lessonId,
@@ -57,7 +55,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
 
   Future<bool> _openQuiz(
     BuildContext context,
-    Lesson lesson, {
+    lesson, {
     bool tutorMode = false,
   }) async {
     try {
@@ -82,7 +80,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
     }
   }
 
-  Future<void> _openVideo(BuildContext context, Lesson lesson) async {
+  Future<void> _openVideo(BuildContext context, lesson) async {
     final user = context.read<AuthCubit>().state.user;
     if (context.mounted) {
       await context.push('/video-player', extra: {
@@ -99,14 +97,14 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
 
   Future<void> _handleLockedTap(
     BuildContext context,
-    Lesson lesson,
-    List<Lesson> lessons,
+    lesson,
+    List<dynamic> lessons,
   ) async {
     final sorted = List.of(lessons)
-      ..sort((a, b) => a.order.compareTo(b.order));
-    Lesson? prev;
+      ..sort((a, b) => (a.order as int).compareTo(b.order as int));
+    dynamic prev;
     for (final l in sorted) {
-      if (l.order < lesson.order) prev = l;
+      if ((l.order as int) < (lesson.order as int)) prev = l;
     }
     final message = lesson.lockType == 'quiz'
         ? 'This lesson is quiz-gated. Pass the previous lesson\u2019s quiz to unlock it.'
@@ -118,7 +116,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
       builder: (ctx) => AlertDialog(
         title: const Text('Lesson locked'),
         content: Text(goToQuiz
-            ? '$message\n\nPrevious: ${prev?.title ?? ''}'
+            ? '$message\n\nPrevious: ${prev.title}'
             : message),
         actions: [
           TextButton(
@@ -133,12 +131,25 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
         ],
       ),
     );
-    if (action == true && context.mounted && prev != null) {
+    if (action == true && context.mounted) {
       await _openQuiz(context, prev);
     }
   }
 
-  Future<void> _handleLessonTap(BuildContext context, Lesson lesson) async {
+  Future<void> _openMaterials(
+      BuildContext context, lesson, List<material_models.Material> materials) async {
+    if (!context.mounted) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => DocumentViewerScreen(
+          materials: materials,
+          lessonTitle: lesson.title.toString(),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _handleLessonTap(BuildContext context, lesson) async {
     final state = context.read<LessonCubit>().state;
     final lessons =
         state is LessonLoaded ? state.lessons : [lesson];
@@ -151,25 +162,50 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
     final hasVideo = lesson.videoId != null;
     final hasQuiz = lesson.quizId != null;
 
-    if (hasVideo && hasQuiz) {
-      // Mixed lesson: let the student choose instead of hiding the quiz.
-      if (!context.mounted) return;
+    // Materials can exist alongside video/quiz — always try to load them
+    // so document lessons mixed with video/quiz stay reachable.
+    List<material_models.Material> materials = const [];
+    try {
+      final lessonRepo = context.read<LessonRepository>();
+      materials = await lessonRepo.getMaterials(lesson.id.toString());
+    } catch (_) {
+      materials = const [];
+    }
+    final hasMaterials = materials.isNotEmpty;
+    if (!context.mounted) return;
+
+    final options = <String>[];
+    if (hasVideo) options.add('video');
+    if (hasQuiz) options.add('quiz');
+    if (hasMaterials) options.add('materials');
+
+    if (options.length > 1) {
+      // Mixed lesson: let the student choose instead of hiding content.
       final choice = await showModalBottomSheet<String>(
         context: context,
         builder: (ctx) => SafeArea(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              ListTile(
-                leading: const Icon(LucideIcons.playCircle),
-                title: const Text('Watch video'),
-                onTap: () => Navigator.of(ctx).pop('video'),
-              ),
-              ListTile(
-                leading: const Icon(LucideIcons.helpCircle),
-                title: const Text('Take quiz'),
-                onTap: () => Navigator.of(ctx).pop('quiz'),
-              ),
+              if (hasVideo)
+                ListTile(
+                  leading: const Icon(LucideIcons.playCircle),
+                  title: const Text('Watch video'),
+                  onTap: () => Navigator.of(ctx).pop('video'),
+                ),
+              if (hasQuiz)
+                ListTile(
+                  leading: const Icon(LucideIcons.helpCircle),
+                  title: const Text('Take quiz'),
+                  onTap: () => Navigator.of(ctx).pop('quiz'),
+                ),
+              if (hasMaterials)
+                ListTile(
+                  leading: const Icon(LucideIcons.fileText),
+                  title: Text(
+                      'View documents (${materials.length})'),
+                  onTap: () => Navigator.of(ctx).pop('materials'),
+                ),
             ],
           ),
         ),
@@ -179,6 +215,8 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
         await _openVideo(context, lesson);
       } else if (choice == 'quiz') {
         await _openQuiz(context, lesson);
+      } else if (choice == 'materials') {
+        await _openMaterials(context, lesson, materials);
       }
       return;
     }
@@ -193,31 +231,15 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
       return;
     }
 
-    try {
-      final lessonRepo = context.read<LessonRepository>();
-      final materials = await lessonRepo.getMaterials(lesson.id);
-      if (context.mounted) {
-        if (materials.isNotEmpty) {
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => DocumentViewerScreen(
-                materials: materials,
-                lessonTitle: lesson.title,
-              ),
-            ),
-          );
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('No content available for this lesson')),
-          );
-        }
-      }
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to load materials: $e')),
-        );
-      }
+    if (hasMaterials) {
+      await _openMaterials(context, lesson, materials);
+      return;
+    }
+
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No content available for this lesson')),
+      );
     }
   }
 

@@ -1,7 +1,8 @@
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../lib/api'
-import { ArrowLeft, HelpCircle, Paperclip, MessageSquare, Edit3 } from 'lucide-react'
+import { ArrowLeft, HelpCircle, MessageSquare, Edit3 } from 'lucide-react'
+import MaterialManager from '../components/MaterialManager'
 
 interface Lesson {
   id: number
@@ -13,13 +14,6 @@ interface Lesson {
   video_id: string | null
   quiz_id: number | null
   course_id: number
-}
-
-interface Material {
-  id: number
-  title: string
-  type: string
-  url: string
 }
 
 interface Comment {
@@ -43,11 +37,6 @@ export default function LessonDetail() {
   const { data: lesson, isLoading } = useQuery<Lesson>({
     queryKey: ['lesson', id],
     queryFn: () => api.get(`/lessons/${id}`),
-  })
-
-  const { data: materials } = useQuery<Material[]>({
-    queryKey: ['lesson-materials', id],
-    queryFn: () => api.get(`/lessons/${id}/materials`),
   })
 
   const { data: comments } = useQuery<Comment[]>({
@@ -115,24 +104,7 @@ export default function LessonDetail() {
         </div>
       )}
 
-      {materials && materials.length > 0 && (
-        <div className="bg-surface rounded-xl border border-border p-5">
-          <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
-            <Paperclip className="h-4 w-4" /> Materials ({materials.length})
-          </h3>
-          <div className="space-y-2">
-            {materials.map((m) => (
-              <div key={m.id} className="flex items-center justify-between p-2.5 rounded-lg bg-surface-alt border border-border">
-                <div>
-                  <p className="text-sm font-medium text-gray-900">{m.title}</p>
-                  <p className="text-xs text-gray-500">{m.type}</p>
-                </div>
-                <a href={m.url} target="_blank" rel="noreferrer" className="text-xs text-primary hover:underline">Open</a>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      {id && <MaterialManager lessonId={String(id)} />}
 
       {comments && comments.length > 0 && (
         <div className="bg-surface rounded-xl border border-border p-5">
