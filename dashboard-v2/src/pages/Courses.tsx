@@ -4,9 +4,11 @@ import { useToast } from '../toast'
 import { useAuth } from '../auth'
 import SearchSelect from '../components/SearchSelect'
 
-interface Lesson { id: string; title: string; order: number; video_id: string | null; is_published: boolean; lock_type: string }
+interface Lesson { id: string; title: string; order: number; video_id: string | null; is_published: boolean; lock_type: string; quiz_id?: string | null }
 interface Course { id: string; title: string; description: string; visibility: string; tags: string[]; instructor_id: string }
 interface Vid { id: string; title: string; status: string; folder?: string }
+interface Quiz { id: string; title: string }
+interface Material { id: string; title: string; type: string; url: string }
 
 export default function Courses() {
   const { toast } = useToast()
@@ -15,6 +17,7 @@ export default function Courses() {
   const [openId, setOpenId] = useState<string | null>(null)
   const [lessons, setLessons] = useState<Lesson[]>([])
   const [videos, setVideos] = useState<Vid[]>([])
+  const [quizzes, setQuizzes] = useState<Quiz[]>([])
   const [loading, setLoading] = useState(true)
 
   const load = useCallback(async () => {
@@ -26,7 +29,11 @@ export default function Courses() {
     catch (e) { toast(e instanceof Error ? e.message : 'Load failed', true) }
     finally { setLoading(false) }
   }, [toast, user])
-  useEffect(() => { load(); api.get<Vid[]>('/videos/manage').then(setVideos).catch(() => {}) }, [load])
+  useEffect(() => {
+    load()
+    api.get<Vid[]>('/videos/manage').then(setVideos).catch(() => {})
+    api.get<Quiz[]>('/quizzes').then(setQuizzes).catch(() => setQuizzes([]))
+  }, [load])
 
   const openCourse = async (id: string) => {
     if (openId === id) { setOpenId(null); return }
@@ -74,6 +81,40 @@ export default function Courses() {
       toast(videoId ? 'Video attached & published' : 'Video detached')
       setLessons(await api.get<Lesson[]>(`/courses/${lesson.id ? courses.find((c) => c.id === openId)?.id : ''}/lessons`))
     } catch (e) { toast(e instanceof Error ? e.message : 'Attach failed', true) }
+  }
+
+  const attachQuiz = async (lesson: Lesson, quizId: string) => {
+    try {
+      await api.put(`/lessons/${lesson.id}`, { quiz_id: quizId || '' })
+      toast(quizId ? 'Quiz attached' : 'Quiz detached')
+      setLessons(lessons.map((l) => l.id === lesson.id ? { ...l, quiz_id: quizId || null } : l))
+    } catch (e) { toast(e instanceof Error ? e.message : 'Attach failed', true) }
+  }
+
+  // materials
+  const [matLesson, setMatLesson] = useState<Lesson | null>(null)
+  const [materials, setMaterials] = useState<Material[]>([])
+  const [mTitle, setMTitle] = useState('')
+  const [mType, setMType] = useState('pdf')
+  const [mUrl, setMUrl] = useState('')
+  const openMaterials = async (lesson: Lesson) => {
+    setMatLesson(lesson); setMTitle(''); setMType('pdf'); setMUrl('')
+    try { setMaterials(await api.get<Material[]>(`/lessons/${lesson.id}/materials`)) }
+    catch (e) { toast(e instanceof Error ? e.message : 'Load materials failed', true) }
+  }
+  const addMaterial = async () => {
+    if (!mTitle.trim() || !mUrl.trim() || !matLesson) return
+    try {
+      await api.post(`/lessons/${matLesson.id}/materials`, { title: mTitle.trim(), type: mType, url: mUrl.trim() })
+      toast('Material added')
+      setMaterials(await api.get<Material[]>(`/lessons/${matLesson.id}/materials`))
+      setMTitle(''); setMUrl('')
+    } catch (e) { toast(e instanceof Error ? e.message : 'Add failed', true) }
+  }
+  const delMaterial = async (m: Material) => {
+    if (!confirm('Delete this material?')) return
+    try { await api.del(`/materials/${m.id}`); setMaterials(materials.filter((x) => x.id !== m.id)); toast('Deleted') }
+    catch (e) { toast(e instanceof Error ? e.message : 'Delete failed', true) }
   }
 
   const updateLesson = async (lesson: Lesson, patch: Partial<Lesson>) => {
@@ -128,7 +169,7 @@ export default function Courses() {
               {openId === c.id && (
                 <div style={{ padding: '0 18px 18px', borderTop: '1px solid var(--border)' }}>
                   <table>
-                    <thead><tr><th>#</th><th>Lesson</th><th>Video</th><th>Lock</th><th>Published</th><th></th></tr></thead>
+                    <thead><tr><th>#</th><th>Lesson</th><th>Video</th><th>Lock</th><th>Quiz</th><th>Published</th><th></th></tr></thead>
                     <tbody data-testid="lessons-table">
                       {lessons.map((l) => (
                         <tr key={l.id}>
@@ -155,14 +196,27 @@ export default function Courses() {
                             </select>
                           </td>
                           <td>
+                            <select value={l.quiz_id || ''} style={{ width: 'auto', padding: '5px 8px' }}
+                              onChange={(e) => attachQuiz(l, e.target.value)}
+                              data-testid={`lesson-quiz-${l.title}`}>
+                              <option value="">No quiz</option>
+                              {quizzes.map((q) => <option key={q.id} value={q.id}>{q.title}</option>)}
+                            </select>
+                          </td>
+                          <td>
                             <button className={`btn small ${l.is_published ? 'ghost' : ''}`} onClick={() => togglePublish(l)}>
                               {l.is_published ? 'Published' : 'Draft'}
                             </button>
                           </td>
-                          <td><button className="btn danger small" onClick={() => deleteLesson(l)}>✕</button></td>
+                          <td>
+                            <div className="row" style={{ gap: 4 }}>
+                              <button className="btn ghost small" onClick={() => openMaterials(l)} data-testid={`lesson-materials-${l.title}`}>Files</button>
+                              <button className="btn danger small" onClick={() => deleteLesson(l)}>✕</button>
+                            </div>
+                          </td>
                         </tr>
                       ))}
-                      {lessons.length === 0 && <tr><td colSpan={6} className="sub" style={{ textAlign: 'center' }}>No lessons yet</td></tr>}
+                      {lessons.length === 0 && <tr><td colSpan={7} className="sub" style={{ textAlign: 'center' }}>No lessons yet</td></tr>}
                     </tbody>
                   </table>
                   <div className="row" style={{ marginTop: 12 }}>
@@ -180,6 +234,42 @@ export default function Courses() {
             </div>
           ))}
           {courses.length === 0 && <p className="sub">No courses</p>}
+        </div>
+      )}
+
+      {matLesson && (
+        <div className="modal-bg" onClick={(e) => e.target === e.currentTarget && setMatLesson(null)}>
+          <div className="modal" style={{ maxWidth: 520 }} data-testid="materials-modal">
+            <h3>Materials — {matLesson.title}</h3>
+            {materials.length > 0 && (
+              <div className="grid" style={{ gap: 8, marginBottom: 12 }}>
+                {materials.map((m) => (
+                  <div className="card spread" key={m.id} style={{ padding: '10px 14px' }}>
+                    <div>
+                      <b>{m.title}</b> <span className="badge b-gray">{m.type}</span>
+                      <div className="sub"><a href={m.url} target="_blank" rel="noreferrer">{m.url}</a></div>
+                    </div>
+                    <button className="btn danger small" onClick={() => delMaterial(m)}>✕</button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {materials.length === 0 && <p className="sub">No materials yet.</p>}
+            <div className="field"><label>Title</label><input value={mTitle} onChange={(e) => setMTitle(e.target.value)} data-testid="material-title" /></div>
+            <div className="row" style={{ gap: 12 }}>
+              <div className="field" style={{ flex: 1 }}><label>Type</label>
+                <select value={mType} onChange={(e) => setMType(e.target.value)}>
+                  <option value="pdf">PDF</option><option value="document">Document</option>
+                  <option value="link">Link</option><option value="image">Image</option>
+                </select>
+              </div>
+              <div className="field" style={{ flex: 2 }}><label>URL</label><input value={mUrl} onChange={(e) => setMUrl(e.target.value)} placeholder="https://…" /></div>
+            </div>
+            <div className="row" style={{ justifyContent: 'flex-end' }}>
+              <button className="btn ghost" onClick={() => setMatLesson(null)}>Close</button>
+              <button className="btn" onClick={addMaterial} disabled={!mTitle || !mUrl} data-testid="material-add">＋ Add</button>
+            </div>
+          </div>
         </div>
       )}
 

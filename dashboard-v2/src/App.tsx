@@ -10,6 +10,12 @@ import Codes from './pages/Codes'
 import Reports from './pages/Reports'
 import Panic from './pages/Panic'
 import Settings from './pages/Settings'
+import Quizzes from './pages/Quizzes'
+import QuizBuilder from './pages/QuizBuilder'
+import QBanks from './pages/QBanks'
+import QBankDetail from './pages/QBankDetail'
+import EnrollmentRequests from './pages/EnrollmentRequests'
+import Certificates from './pages/Certificates'
 
 function Guard({ children }: { children: React.ReactNode }) {
   const { user } = useAuth()
@@ -30,6 +36,12 @@ export default function App() {
         <Route path="/reports" element={<Reports />} />
         <Route path="/panic" element={<Panic />} />
         <Route path="/settings" element={<Settings />} />
+        <Route path="/quizzes" element={<Quizzes />} />
+        <Route path="/quizzes/:id" element={<QuizBuilder />} />
+        <Route path="/qbanks" element={<QBanks />} />
+        <Route path="/qbanks/:id" element={<QBankDetail />} />
+        <Route path="/enrollment" element={<EnrollmentRequests />} />
+        <Route path="/certificates" element={<Certificates />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

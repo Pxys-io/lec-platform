@@ -336,6 +336,55 @@ def create_qbank_question(
     )
 
 
+@router.put("/{qbank_id}/questions/{question_id}", response_model=QuestionResponse)
+def update_qbank_question(
+    qbank_id: str,
+    question_id: str,
+    request: QuestionCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_instructor),
+):
+    qbank = db.get(QBank, qbank_id)
+    if not qbank:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="QBank not found"
+        )
+
+    question = db.get(Question, question_id)
+    if not question or question.qbank_id != qbank_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Question not found"
+        )
+
+    question.type = request.type
+    question.question = request.question
+    question.options = json.dumps(request.options) if request.options else None
+    question.correct_answer = request.correct_answer
+    question.explanation = request.explanation
+    question.points = request.points
+    question.tags = json.dumps(request.tags)
+    question.order = request.order
+
+    db.add(question)
+    db.commit()
+    db.refresh(question)
+
+    options = json.loads(question.options) if question.options else None
+
+    return QuestionResponse(
+        id=question.id,
+        qbank_id=question.qbank_id,
+        type=question.type,
+        question=question.question,
+        options=options,
+        correct_answer=question.correct_answer,
+        explanation=question.explanation,
+        points=question.points,
+        tags=json.loads(question.tags) if question.tags else [],
+        order=question.order,
+    )
+
+
 @router.delete("/questions/{question_id}")
 def delete_qbank_question(
     question_id: str,
