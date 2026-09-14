@@ -14,6 +14,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../logic/local_video_server.dart';
 import '../logic/video_downloader.dart';
 import '../logic/watch_progress_tracker.dart';
+import '../logic/player_debug.dart';
 import '../widgets/player_error_view.dart';
 import '../widgets/player_overlays.dart';
 import '../widgets/quality_picker.dart';
@@ -104,10 +105,16 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   Future<void> _initializePlayer() async {
     try {
       final videoRepo = context.read<VideoRepository>();
+      playerLog('init lesson=${widget.lessonId}');
       final manifest = await videoRepo.getVideoManifest(widget.lessonId);
 
       _manifest = manifest;
       _loadError = null;
+      playerLog(
+        'manifest mode=${manifest.streamingMode} '
+        'resolutions=${manifest.resolutions.map((r) => r.resolution).join(",")} '
+        'watermark=${manifest.watermarkMode} encrypted-keys-in-playlist=yes',
+      );
 
       _watchTracker = WatchProgressTracker(
         misc: context.read<MiscRepository>(),
@@ -175,6 +182,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
             !_playerErrorShown &&
             mounted) {
           _playerErrorShown = true;
+          playerLog('EXOPLAYER-ERROR: ${v.errorDescription ?? 'unknown'}');
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
@@ -246,6 +254,11 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     try {
       final videoRepo = context.read<VideoRepository>();
       final apiClient = context.read<ApiClient>();
+      playerLog(
+        'loadAndPlay res=${resolution.resolution} '
+        'token=${tokenSummary(apiClient.token)} '
+        'baseUrl=${apiClient.baseUrl}',
+      );
 
       final appDir = await getApplicationDocumentsDirectory();
       final downloader = VideoDownloader(
@@ -333,22 +346,31 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
         final playlistFile = File('$cacheDir/$cacheKey');
 
         if (await playlistFile.exists()) {
+          playerLog('playlist source=CACHE-FILE $cacheKey');
           playlistContent = await playlistFile.readAsString();
         } else {
+          playerLog('playlist source=NETWORK fetch');
           playlistContent = await videoRepo.getPlaylist(
             widget.lessonId,
             resolution.resolution,
           );
         }
+        playerLog(
+          'playlist lines=${playlistContent.split('\n').length} '
+          'has-proxy=${playlistContent.contains('/proxy/')} '
+          'has-key=${playlistContent.contains('EXT-X-KEY')}',
+        );
         // Inject a FRESH auth token into proxy URIs (key / watermark /
         // overlay) so the native player can fetch them without headers
         // (file:// playback). Cached playlists may carry an expired token,
         // so any existing token param is always stripped first.
         final token = apiClient.token ?? '';
+        int injected = 0;
         if (token.isNotEmpty && playlistContent.contains('/proxy/')) {
           final proxyPattern = RegExp(
             '${RegExp.escape(apiClient.baseUrl)}/videos/proxy[^\\s"\\n]+',
           );
+          final matches = proxyPattern.allMatches(playlistContent).length;
           playlistContent = playlistContent.replaceAllMapped(
             proxyPattern,
             (m) {
@@ -357,8 +379,25 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
               url = url.replaceAll(RegExp(r'[?&]token=[^&\s"]*'), '');
               // Preserve other query params if present (unlikely).
               final sep = url.contains('?') ? '&' : '?';
+              injected++;
               return '$url${sep}token=$token';
             },
+          );
+          playerLog('token-inject matched=$matches injected=$injected');
+        } else {
+          playerLog(
+            'token-inject SKIPPED token-empty=${token.isEmpty} '
+            'no-proxy=${!playlistContent.contains('/proxy/')}',
+          );
+        }
+        // Log the exact key URI ExoPlayer will fetch (token redacted).
+        final keyLine = playlistContent.split('\n').firstWhere(
+              (l) => l.contains('EXT-X-KEY'),
+              orElse: () => '',
+            );
+        if (keyLine.isNotEmpty) {
+          playerLog(
+            'key-uri=${keyLine.replaceAll(RegExp(r'token=[^"&\s]*'), 'token=...')}',
           );
         }
         await playlistFile.writeAsString(playlistContent);
@@ -369,11 +408,13 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
       final oldChewie = _chewieController;
 
       if (_isLocal) {
+        playerLog('controller=NETWORK-URL local-server port=${_localServer.port}');
         _videoPlayerController = VideoPlayerController.networkUrl(
           Uri.parse(videoUrl),
           httpHeaders: headers,
         );
       } else {
+        playerLog('controller=FILE path=$videoUrl');
         _videoPlayerController = VideoPlayerController.file(File(videoUrl));
       }
 
@@ -411,6 +452,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   }
 
   Future<void> _retry() async {
+    playerLog('retry pressed');
     if (mounted) setState(() => _loadError = null);
     await _initializePlayer();
   }
