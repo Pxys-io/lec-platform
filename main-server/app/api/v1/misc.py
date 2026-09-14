@@ -81,12 +81,22 @@ async def upload_file(
     file: UploadFile = File(...),
     user: User = Depends(get_current_user),
 ):
-    # In a real app, upload to S3/R2. For now, save locally.
-    upload_dir = "uploads"
+    # In a real app, upload to S3/R2. For now, save locally and serve via the
+    # /uploads StaticFiles mount in app/main.py. Resolve the dir from this
+    # file's location so CWD doesn't matter.
+    here = os.path.abspath(__file__)
+    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(here))))
+    upload_dir = os.path.join(base_dir, "uploads")
     os.makedirs(upload_dir, exist_ok=True)
 
     file_id = str(uuid.uuid4())
-    ext = os.path.splitext(file.filename)[1]
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    allowed = {
+        ".pdf", ".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx",
+        ".txt", ".md", ".png", ".jpg", ".jpeg", ".gif", ".webp",
+    }
+    if ext not in allowed:
+        ext = ".pdf" if (file.content_type or "").endswith("pdf") else (ext or ".bin")
     file_path = os.path.join(upload_dir, f"{file_id}{ext}")
 
     with open(file_path, "wb") as buffer:
@@ -95,7 +105,7 @@ async def upload_file(
     # Build the URL from the incoming request so it is correct regardless of
     # MAIN_SERVER_URL config (dev localhost vs prod domain).
     base = str(request.base_url).rstrip("/")
-    return {"url": f"{base}/{file_path}"}
+    return {"url": f"{base}/uploads/{file_id}{ext}"}
 
 
 @misc_router.post("/handshake", response_model=AppHandshakeResponse)

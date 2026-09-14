@@ -34,9 +34,13 @@ app.add_middleware(
 app.include_router(api_router, prefix="/api")
 
 # Serve uploaded files (materials, enrollment images) - /misc/upload writes
-# here, so without this mount every returned URL was a 404.
-os.makedirs("uploads", exist_ok=True)
-app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+# here, so without this mount every returned URL was a 404. Resolve from this
+# file's location so CWD doesn't matter.
+UPLOAD_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "uploads"
+)
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 
 @app.get("/")
