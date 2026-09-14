@@ -1,6 +1,6 @@
 # Plan 02 — Backend hardening: auth, answer leaks, 500s, secrets
 
-Status: **ACTIVE**
+Status: **DONE**
 
 Scope: `main-server/` and `video-server/` (backend). Fixes the security and
 correctness issues found during Plan 01's audit, in severity order. The
