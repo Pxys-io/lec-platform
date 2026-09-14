@@ -52,3 +52,22 @@ hardcoded `ENCRYPTION_KEY` placeholder in build tooling.
   - Verified: failing lesson now returns proxied segments; segment fetch
     200 with `?token=`, 401 without (correct).
 - Next: resume Plan 05 steps (dashboard auto-refresh, ENCRYPTION_KEY).
+- **User-reported trio (fixed, committed `f9b447b`, debug APK builds).**
+  - **Auto-advance:** player now shows an "Up next" card with 10s auto-play
+    countdown once max position reaches >=90% — seek-proof (driven by
+    `WatchProgressTracker.isComplete`, not natural completion). Flushes the
+    final report BEFORE navigating so `previous_lesson` gates are satisfied.
+    Quiz-gated next lessons show the card without autoplay (backend would
+    403). Last lesson: no card. Quiz-only next lessons load the quiz and
+    replace the route. `courseId` added to the player route; passed from
+    course detail / home / progress (downloads play without it = no advance).
+  - **Continue watching:** was empty because home never reloaded stats after
+    playback (shell branch preserves state; loadStats ran only at startup +
+    pull-to-refresh). Player dispose now chains flush-then-`StatsCubit`
+    reload, so continue-watching picks up the session on return. Backend
+    flow verified on prod (report 45% → listed; 95% → correctly filtered as
+    completed).
+  - **Enroll on owned courses:** `CourseRepository.getMyCourses` +
+    `CourseLoaded.ownedIds`; course detail hides the Enroll bottom sheet when
+    owned and shows an "Enrolled" badge. Also re-merged the server-WIP
+    materials support in course detail with restored `Lesson` typing.
