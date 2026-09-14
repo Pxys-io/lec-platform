@@ -34,4 +34,21 @@ hardcoded `ENCRYPTION_KEY` placeholder in build tooling.
     manifest 200 (1080p/720p/480p/270p) → playlist 200 (VERSION:7,
     EXT-X-MAP, per-segment AES keys) → R2 segment 200, key proxy 401 without
     auth (correct).
+- **Player 401 root cause (user-reported, fixed + deployed).**
+  - Debug prints added to the app (`player_debug.dart` + instrumented
+    `_loadAndPlay`); user logs showed a VALID token but a 17-line cached
+    playlist with no proxy/key URLs.
+  - Two layers: (a) stale poisoned temp cache (pre-proxy direct URLs, dead
+    since Plan 02 auth) — fixed with playlist validation + versioned cache
+    keys + legacy purge (committed `7d1b638`); (b) the REAL bug: my Plan 02
+    proxy-rewrite regex never matched anything (full origins with scheme
+    inside an alternation already prefixed with `https?://` = double-scheme
+    requirement). Local-storage videos (segment URLs built from the video
+    server's own base) passed through raw → 401 on every segment. R2 videos
+    worked, which is why verification passed.
+  - Fix: host-agnostic `rewrite_video_server_urls_to_proxy` (match the
+    `/internal/videos/` path, skip already-proxied, leave R2 URLs alone),
+    applied to both playlist proxies (committed `e19fd70`, deployed).
+  - Verified: failing lesson now returns proxied segments; segment fetch
+    200 with `?token=`, 401 without (correct).
 - Next: resume Plan 05 steps (dashboard auto-refresh, ENCRYPTION_KEY).
