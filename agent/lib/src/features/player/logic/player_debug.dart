@@ -32,3 +32,32 @@ String tokenSummary(String? token) {
   final expStr = left == null ? 'unreadable-exp' : '${left}s-left';
   return 'len=${token.length} prefix=${token.substring(0, 12)}... $expStr';
 }
+
+/// Cache filename version for temp remote playlists. Bump when the playlist
+/// format handling changes so poisoned/legacy cache files are never read.
+const String kPlaylistCacheVersion = 'v3';
+
+/// A cached playlist is usable only if it looks like a real HLS playlist
+/// served through the main-server proxy. Stale files from older app versions
+/// (direct video-server URLs, error bodies, truncated downloads) must be
+/// discarded so the player fetches a fresh one instead of playing garbage.
+bool cachedPlaylistLooksValid(String content) {
+  if (!content.contains('#EXTM3U')) return false;
+  // Direct video-server origins (pre-proxy format) are dead since the
+  // internal API requires the service token - segments fetched from them
+  // 401. Only proxied playlists are playable.
+  if (content.contains('/internal/videos/') && !content.contains('/proxy/')) {
+    return false;
+  }
+  // Must contain at least one media segment reference.
+  final hasSegment = content.split('\n').any((l) {
+    final t = l.trim();
+    return t.isNotEmpty &&
+        !t.startsWith('#') &&
+        (t.startsWith('http') ||
+            t.endsWith('.ts') ||
+            t.endsWith('.m4s') ||
+            t.endsWith('.mp4'));
+  });
+  return hasSegment;
+}

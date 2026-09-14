@@ -102,6 +102,29 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     return _cacheDir!;
   }
 
+  /// Deletes legacy unversioned playlist cache files left by older app
+  /// versions. Those may contain pre-proxy direct video-server URLs (now
+  /// 401) or error bodies - never playable.
+  Future<void> _purgeLegacyPlaylistCache(String cacheDirPath) async {
+    try {
+      final dir = Directory(cacheDirPath);
+      if (!await dir.exists()) return;
+      await for (final e in dir.list()) {
+        if (e is File) {
+          final name = e.path.split('/').last;
+          if (name.startsWith('playlist_') &&
+              name.endsWith('.m3u8') &&
+              !name.contains('.$kPlaylistCacheVersion.m3u8')) {
+            playerLog('purging legacy playlist cache $name');
+            await e.delete().catchError((_) => e);
+          }
+        }
+      }
+    } catch (e) {
+      playerLog('legacy purge failed: $e');
+    }
+  }
+
   Future<void> _initializePlayer() async {
     try {
       final videoRepo = context.read<VideoRepository>();
@@ -341,13 +364,31 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
       } else {
         _isLocal = false;
         final cacheDir = await _getCacheDir();
+        // Versioned cache key: legacy unversioned playlist_*.m3u8 files
+        // (possibly poisoned with pre-proxy URLs) are never read again.
         final cacheKey =
-            'playlist_${widget.lessonId}_${resolution.resolution}.m3u8';
+            'playlist_${widget.lessonId}_${resolution.resolution}.$kPlaylistCacheVersion.m3u8';
         final playlistFile = File('$cacheDir/$cacheKey');
+        // One-time purge of legacy cache files from older app versions.
+        _purgeLegacyPlaylistCache(cacheDir);
 
         if (await playlistFile.exists()) {
-          playerLog('playlist source=CACHE-FILE $cacheKey');
-          playlistContent = await playlistFile.readAsString();
+          final cached = await playlistFile.readAsString();
+          if (cachedPlaylistLooksValid(cached)) {
+            playerLog('playlist source=CACHE-FILE $cacheKey');
+            playlistContent = cached;
+          } else {
+            playerLog(
+              'playlist source=CACHE-FILE $cacheKey INVALID '
+              '(lines=${cached.split('\n').length}) -> refetch',
+            );
+            await playlistFile.delete().catchError((_) => playlistFile);
+            playlistContent = await videoRepo.getPlaylist(
+              widget.lessonId,
+              resolution.resolution,
+            );
+            playerLog('playlist source=NETWORK refetch-after-invalid');
+          }
         } else {
           playerLog('playlist source=NETWORK fetch');
           playlistContent = await videoRepo.getPlaylist(
@@ -360,6 +401,14 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
           'has-proxy=${playlistContent.contains('/proxy/')} '
           'has-key=${playlistContent.contains('EXT-X-KEY')}',
         );
+        if (!cachedPlaylistLooksValid(playlistContent)) {
+          playerLog('playlist INVALID from network -> error screen');
+          if (mounted) {
+            setState(() => _loadError =
+                'Server returned an unplayable playlist for ${resolution.resolution}.');
+          }
+          return;
+        }
         // Inject a FRESH auth token into proxy URIs (key / watermark /
         // overlay) so the native player can fetch them without headers
         // (file:// playback). Cached playlists may carry an expired token,
