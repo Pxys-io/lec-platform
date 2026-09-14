@@ -8,13 +8,15 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:screen_protector/screen_protector.dart';
 import 'package:chewie/chewie.dart';
 import 'package:video_player/video_player.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../logic/local_video_server.dart';
 import '../logic/video_downloader.dart';
 import '../logic/watch_progress_tracker.dart';
+import '../widgets/player_error_view.dart';
+import '../widgets/player_overlays.dart';
+import '../widgets/quality_picker.dart';
 import '../../../repositories/video_repository.dart';
 import '../../../repositories/misc_repository.dart';
 import '../../../api/api_client.dart';
@@ -506,100 +508,38 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     });
   }
 
-  void _showQualityPicker() async {
-    if (_manifest == null) return;
-    final appDir = await getApplicationDocumentsDirectory();
-
-    if (!mounted) return;
-
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.black87,
-      builder: (ctx) => Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Padding(
-            padding: EdgeInsets.all(16),
-            child: Text(
-              'Video Quality',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-          SwitchListTile(
-            title: const Text(
-              'Auto Quality',
-              style: TextStyle(color: Colors.white),
-            ),
-            subtitle: Text(
-              'Estimated: ${_estimatedSpeedKbps.toStringAsFixed(0)} kbps',
-              style: const TextStyle(color: Colors.white54),
-            ),
-            value: _isAutoQuality,
-            onChanged: (val) {
-              setState(() => _isAutoQuality = val);
-              Navigator.pop(ctx);
-              if (val) {
-                _measureNetworkSpeed().then((_) {
-                  if (_manifest != null) {
-                    final best = _pickBestQuality(_manifest!);
-                    if (best.resolution != _currentResolution) {
-                      _currentResolution = best.resolution;
-                      _loadAndPlay(best);
-                    }
-                  }
-                });
+  void _showQualityPicker() {
+    final manifest = _manifest;
+    if (manifest == null) return;
+    final apiClient = context.read<ApiClient>();
+    showQualityPicker(
+      context,
+      manifest: manifest,
+      currentResolution: _currentResolution,
+      isAutoQuality: _isAutoQuality,
+      estimatedSpeedKbps: _estimatedSpeedKbps,
+      lessonId: widget.lessonId,
+      baseUrl: apiClient.baseUrl,
+      authToken: apiClient.token ?? '',
+      onAutoChanged: (val) {
+        setState(() => _isAutoQuality = val);
+        if (val) {
+          _measureNetworkSpeed().then((_) {
+            if (_manifest != null && mounted) {
+              final best = _pickBestQuality(_manifest!);
+              if (best.resolution != _currentResolution) {
+                _currentResolution = best.resolution;
+                _loadAndPlay(best);
               }
-            },
-          ),
-          if (!_isAutoQuality)
-            ..._manifest!.resolutions.map((res) {
-              return FutureBuilder<bool>(
-                future: VideoDownloader(
-                  baseUrl: context.read<ApiClient>().baseUrl,
-                  authToken: context.read<ApiClient>().token ?? '',
-                  baseDir: appDir.path,
-                ).isDownloaded(widget.lessonId, res.resolution),
-                builder: (context, snapshot) {
-                  final isDownloaded = snapshot.data ?? false;
-                  return ListTile(
-                    leading: Icon(
-                      res.resolution == _currentResolution
-                          ? Icons.radio_button_checked
-                          : Icons.radio_button_unchecked,
-                      color: Colors.white,
-                    ),
-                    title: Text(
-                      '${res.resolution}  |  ${(res.bitrate / 1000000).toStringAsFixed(1)} Mbps',
-                      style: const TextStyle(color: Colors.white),
-                    ),
-                    trailing: isDownloaded
-                        ? const Icon(Icons.download_done, color: Colors.green)
-                        : IconButton(
-                            icon: const Icon(
-                              Icons.download,
-                              color: Colors.white,
-                            ),
-                            onPressed: () {
-                              Navigator.pop(ctx);
-                              _startDownload(res);
-                            },
-                          ),
-                    onTap: () {
-                      Navigator.pop(ctx);
-                      _currentResolution = res.resolution;
-                      _loadAndPlay(res);
-                    },
-                  );
-                },
-              );
-            }),
-          const SizedBox(height: 16),
-        ],
-      ),
+            }
+          });
+        }
+      },
+      onSelect: (res) {
+        setState(() => _currentResolution = res.resolution);
+        _loadAndPlay(res);
+      },
+      onDownload: (res) => _startDownload(res),
     );
   }
 
@@ -617,12 +557,6 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     super.dispose();
   }
 
-  Color _hexColor(String hex) {
-    hex = hex.replaceFirst('#', '');
-    if (hex.length == 6) hex = 'FF$hex';
-    return Color(int.parse(hex, radix: 16));
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -633,195 +567,28 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
                   _chewieController!.videoPlayerController.value.isInitialized
               ? Center(child: Chewie(controller: _chewieController!))
               : _loadError != null
-                  ? _PlayerErrorView(message: _loadError!, onRetry: _retry)
+                  ? PlayerErrorView(message: _loadError!, onRetry: _retry)
                   : const Center(child: CircularProgressIndicator()),
 
-          if (_manifest != null)
-            AnimatedPositioned(
-              duration: const Duration(seconds: 1),
-              left: _watermarkOffset.dx,
-              top: _watermarkOffset.dy,
-              child: Opacity(
-                opacity: _manifest!.watermarkOpacity.clamp(0.0, 1.0),
-                child: Text(
-                  '${widget.userEmail} — ${widget.studentId}',
-                  style: TextStyle(
-                    color: _hexColor(_manifest!.watermarkColor),
-                    fontSize: _manifest!.watermarkFontSize.toDouble(),
-                    fontWeight: FontWeight.bold,
-                    shadows: const [Shadow(blurRadius: 2, color: Colors.black)],
-                  ),
-                ),
-              ),
+          PlayerOverlays(
+            manifest: _manifest,
+            watermarkOffset: _watermarkOffset,
+            userEmail: widget.userEmail,
+            studentId: widget.studentId,
+            currentResolution: _currentResolution,
+            modeMismatchWarning: _modeMismatchWarning && _isLocal,
+            modeMismatchMessage: _modeMismatchMessage,
+            isDownloading: _isDownloading,
+            downloadProgress: _downloadProgress,
+            onBack: () => Navigator.of(context).pop(),
+            onComments: () => CommentsSheet.show(
+              context,
+              lessonId: widget.lessonId,
+              currentUserId: widget.studentId,
             ),
-
-          Positioned(
-            top: 40,
-            left: 20,
-            child: IconButton(
-              icon: const Icon(LucideIcons.arrowLeft, color: Colors.white),
-              onPressed: () => Navigator.of(context).pop(),
-            ),
+            onQualityTap: _showQualityPicker,
           ),
-
-          Positioned(
-            top: 40,
-            right: 20,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  icon: const Icon(
-                    LucideIcons.messageSquare,
-                    color: Colors.white,
-                  ),
-                  onPressed: () => CommentsSheet.show(
-                    context,
-                    lessonId: widget.lessonId,
-                    currentUserId: widget.studentId,
-                  ),
-                ),
-                const SizedBox(width: 4),
-                GestureDetector(
-                  onTap: _showQualityPicker,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.black54,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(
-                          LucideIcons.monitor,
-                          color: Colors.white,
-                          size: 16,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          _currentResolution,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          if (_modeMismatchWarning && _isLocal)
-            Positioned(
-              top: 80,
-              left: 20,
-              right: 20,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.orange.withValues(alpha: 0.9),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(
-                      LucideIcons.shieldAlert,
-                      color: Colors.white,
-                      size: 18,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        _modeMismatchMessage,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-          if (_isDownloading)
-            Positioned(
-              bottom: 100,
-              left: 20,
-              right: 20,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  LinearProgressIndicator(
-                    value: _downloadProgress,
-                    backgroundColor: Colors.white24,
-                    valueColor: const AlwaysStoppedAnimation<Color>(
-                      Colors.blue,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Downloading... ${(_downloadProgress * 100).toStringAsFixed(0)}%',
-                    style: const TextStyle(color: Colors.white, fontSize: 12),
-                  ),
-                ],
-              ),
-            ),
         ],
-      ),
-    );
-  }
-}
-
-class _PlayerErrorView extends StatelessWidget {
-  final String message;
-  final VoidCallback onRetry;
-
-  const _PlayerErrorView({required this.message, required this.onRetry});
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(LucideIcons.videoOff, color: Colors.white70, size: 48),
-            const SizedBox(height: 16),
-            const Text(
-              'Could not load video',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              message,
-              textAlign: TextAlign.center,
-              maxLines: 4,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: Colors.white54, fontSize: 13),
-            ),
-            const SizedBox(height: 24),
-            FilledButton.icon(
-              onPressed: onRetry,
-              icon: const Icon(LucideIcons.rotateCw),
-              label: const Text('Retry'),
-            ),
-          ],
-        ),
       ),
     );
   }
