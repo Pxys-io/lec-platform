@@ -138,9 +138,12 @@ def start_cache_cleanup_worker(interval_seconds=300):
             time.sleep(interval_seconds)
             try:
                 db = next(get_db())
-                count = cache_expire_old_entries(db)
-                if count:
-                    print(f"Cache cleanup: expired {count} entries")
+                try:
+                    count = cache_expire_old_entries(db)
+                    if count:
+                        print(f"Cache cleanup: expired {count} entries")
+                finally:
+                    db.close()
             except Exception as e:
                 print(f"Cache cleanup error: {e}")
 

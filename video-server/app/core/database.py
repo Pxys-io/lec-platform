@@ -2,12 +2,34 @@ import logging
 
 from sqlmodel import SQLModel, create_engine, Session
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy import event
 
 from app.core.config import settings
 
 logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
 
-engine = create_engine(settings.DATABASE_URL, echo=False)
+# SQLite needs WAL + a busy timeout to survive concurrent readers/writers
+# (the playlist/cache layer writes on every request). Without them, a QueuePool
+# of modest size exhausts under load and every request times out (500s).
+engine = create_engine(
+    settings.DATABASE_URL,
+    echo=False,
+    connect_args={"check_same_thread": False, "timeout": 30},
+    pool_size=20,
+    max_overflow=0,
+    pool_pre_ping=True,
+)
+
+if settings.DATABASE_URL.startswith("sqlite"):
+
+    @event.listens_for(engine, "connect")
+    def _set_sqlite_pragma(dbapi_conn, connection_record):
+        cur = dbapi_conn.cursor()
+        cur.execute("PRAGMA journal_mode=WAL")
+        cur.execute("PRAGMA busy_timeout=30000")
+        cur.execute("PRAGMA synchronous=NORMAL")
+        cur.close()
+
 SessionLocal = sessionmaker(bind=engine, class_=Session)
 
 

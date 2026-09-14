@@ -83,9 +83,10 @@ async def upload_file(
 ):
     # In a real app, upload to S3/R2. For now, save locally and serve via the
     # /uploads StaticFiles mount in app/main.py. Resolve the dir from this
-    # file's location so CWD doesn't matter.
+    # file's location so CWD doesn't matter. Keep it as <repo>/main-server/uploads
+    # to match the StaticFiles mount (dirname x3: app/api/v1 -> main-server).
     here = os.path.abspath(__file__)
-    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(here))))
+    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(here)))
     upload_dir = os.path.join(base_dir, "uploads")
     os.makedirs(upload_dir, exist_ok=True)
 
