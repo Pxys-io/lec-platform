@@ -78,8 +78,4 @@ class UserRepository {
     final response = await apiClient.get('/users/me/devices');
     return Map<String, dynamic>.from(response as Map);
   }
-
-  Future<void> deleteMyDevice(String deviceId) async {
-    await apiClient.delete('/users/me/devices/$deviceId');
-  }
 }

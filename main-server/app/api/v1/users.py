@@ -449,26 +449,6 @@ def get_my_devices(
     }
 
 
-@router.delete("/me/devices/{device_id}")
-def delete_my_device(
-    device_id: str,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    d = db.exec(
-        select(UserDevice).where(
-            (UserDevice.user_id == user.id) & (UserDevice.device_id == device_id)
-        )
-    ).first()
-    if not d:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
-
-    db.delete(d)
-    db.commit()
-
-    return {"message": "Device removed"}
-
-
 @router.get("/{user_id}/devices", response_model=dict)
 def get_user_devices(
     user_id: str,

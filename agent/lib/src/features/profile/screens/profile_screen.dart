@@ -8,7 +8,6 @@ import '../../../models/user.dart';
 import '../../../repositories/misc_repository.dart';
 import '../../../repositories/auth_repository.dart';
 import '../../../repositories/user_repository.dart';
-import '../../../services/device_service.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
@@ -417,8 +416,7 @@ class ProfileScreen extends StatelessWidget {
   }
 }
 
-/// Devices row in settings: shows "N of M devices used" and opens the
-/// management sheet (list + remove other devices).
+/// Devices row in settings: shows "N of M devices used". Display only.
 class _DevicesRow extends StatefulWidget {
   const _DevicesRow();
 
@@ -451,198 +449,12 @@ class _DevicesRowState extends State<_DevicesRow> {
   @override
   Widget build(BuildContext context) {
     final subtitle = (_count == null || _limit == null)
-        ? 'Manage signed-in devices'
+        ? 'Signed-in devices'
         : '$_count of $_limit devices used';
     return ListTile(
       leading: const Icon(LucideIcons.smartphone),
       title: const Text('Devices'),
       subtitle: Text(subtitle),
-      trailing: const Icon(LucideIcons.chevronRight),
-      onTap: () async {
-        await _DevicesSheetBody.show(context);
-        if (mounted) _load();
-      },
-    );
-  }
-}
-
-/// Devices management sheet (list + remove other devices).
-class _DevicesSheetBody extends StatefulWidget {
-  final ScrollController scrollController;
-
-  const _DevicesSheetBody({required this.scrollController});
-
-  static Future<void> show(BuildContext context) {
-    return showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (_) => DraggableScrollableSheet(
-        initialChildSize: 0.6,
-        maxChildSize: 0.9,
-        minChildSize: 0.4,
-        expand: false,
-        builder: (context, scrollController) =>
-            _DevicesSheetBody(scrollController: scrollController),
-      ),
-    );
-  }
-
-  @override
-  State<_DevicesSheetBody> createState() => _DevicesSheetBodyState();
-}
-
-class _DevicesSheetBodyState extends State<_DevicesSheetBody> {
-  List<Map<String, dynamic>> _devices = [];
-  int? _limit;
-  String? _currentId;
-  bool _loading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    setState(() => _loading = true);
-    try {
-      final repo = context.read<UserRepository>();
-      final results = await Future.wait([
-        repo.getMyDevices(),
-        DeviceService.getOrCreatePersistentDeviceId(),
-      ]);
-      if (!mounted) return;
-      final data = results[0] as Map<String, dynamic>;
-      final devices = data['devices'];
-      setState(() {
-        _devices = devices is List
-            ? devices
-                .map((e) => Map<String, dynamic>.from(e as Map))
-                .toList()
-            : [];
-        _limit = (data['device_limit'] as num?)?.toInt();
-        _currentId = results[1] as String;
-        _loading = false;
-      });
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  Future<void> _remove(String deviceId) async {
-    final go = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Remove device?'),
-        content: const Text(
-          'This device will need to sign in again.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Remove'),
-          ),
-        ],
-      ),
-    );
-    if (go != true || !mounted) return;
-    try {
-      await context.read<UserRepository>().deleteMyDevice(deviceId);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Device removed')),
-        );
-        _load();
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to remove device: $e')),
-        );
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Center(
-            child: Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.grey[300],
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          Text('Devices', style: Theme.of(context).textTheme.titleLarge),
-          if (_limit != null)
-            Text(
-              '${_devices.length} of $_limit used',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          const SizedBox(height: 16),
-          if (_loading)
-            const Expanded(child: Center(child: CircularProgressIndicator()))
-          else if (_devices.isEmpty)
-            const Expanded(child: Center(child: Text('No devices found')))
-          else
-            Expanded(
-              child: ListView.separated(
-                controller: widget.scrollController,
-                itemCount: _devices.length,
-                separatorBuilder: (_, __) => const Divider(height: 1),
-                itemBuilder: (context, i) {
-                  final d = _devices[i];
-                  final id = d['device_id']?.toString() ?? '';
-                  final isCurrent = id.isNotEmpty && id == _currentId;
-                  final isMobile = d['device_type'] != 'desktop';
-                  DateTime? lastLogin;
-                  try {
-                    final raw = d['last_login']?.toString();
-                    if (raw != null && raw.isNotEmpty) {
-                      lastLogin = DateTime.parse(raw);
-                    }
-                  } catch (_) {}
-                  return ListTile(
-                    leading: Icon(
-                      isMobile ? LucideIcons.smartphone : LucideIcons.monitor,
-                    ),
-                    title: Text(
-                      isCurrent
-                          ? 'This device'
-                          : '${isMobile ? 'Mobile' : 'Desktop'} • ${id.length > 8 ? id.substring(0, 8) : id}',
-                    ),
-                    subtitle: lastLogin != null
-                        ? Text(
-                            'Last active: ${lastLogin.year}-${lastLogin.month.toString().padLeft(2, '0')}-${lastLogin.day.toString().padLeft(2, '0')}',
-                          )
-                        : null,
-                    trailing: isCurrent
-                        ? const Icon(LucideIcons.check,
-                            color: Colors.green, size: 18)
-                        : IconButton(
-                            icon: const Icon(LucideIcons.trash2,
-                                size: 18, color: Colors.red),
-                            tooltip: 'Remove device',
-                            onPressed: () => _remove(id),
-                          ),
-                  );
-                },
-              ),
-            ),
-        ],
-      ),
     );
   }
 }
