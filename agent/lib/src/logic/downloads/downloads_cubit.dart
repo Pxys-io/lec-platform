@@ -13,6 +13,11 @@ class DownloadsCubit extends Cubit<DownloadsState> {
   final ApiClient apiClient;
   final VideoRepository videoRepository;
   final Map<String, VideoDownloader> _activeDownloaders = {};
+  // downloadKey -> effective resolution (differs from requested after the
+  // 404 fallback, e.g. requested 1080p but video maxes at 360p). All state
+  // matching MUST use this, never the requested resolution, or progress
+  // freezes and zombie items strand forever.
+  final Map<String, String> _effectiveResolutions = {};
 
   DownloadsCubit({required this.apiClient, required this.videoRepository})
     : super(const DownloadsState());
@@ -126,6 +131,7 @@ class DownloadsCubit extends Cubit<DownloadsState> {
     );
 
     _activeDownloaders[downloadKey] = downloader;
+    _effectiveResolutions[downloadKey] = resolution;
 
     final activeItem = ActiveDownload(
       lessonId: lessonId,
@@ -166,14 +172,36 @@ class DownloadsCubit extends Cubit<DownloadsState> {
         }
       }
 
+      // Lock in the effective resolution BEFORE any progress callback: if
+      // the 404 fallback switched resolutions, the state item and all
+      // future matching must use it from here on.
+      _effectiveResolutions[downloadKey] = effectiveResolution;
+      if (effectiveResolution != resolution) {
+        final synced = state.active.map((item) {
+          if (item.lessonId == lessonId && item.resolution == resolution) {
+            return ActiveDownload(
+              lessonId: lessonId,
+              title: title,
+              resolution: effectiveResolution,
+              progress: item.progress,
+              totalSegments: item.totalSegments,
+              downloadedSegments: item.downloadedSegments,
+            );
+          }
+          return item;
+        }).toList();
+        emit(state.copyWith(active: synced));
+      }
+
       await downloader.downloadVideo(
         lessonId: lessonId,
         resolution: effectiveResolution,
         playlistContent: playlistContent,
         modeWhenDownloaded: modeWhenDownloaded,
         onProgress: (p) {
+          final eff = _effectiveResolutions[downloadKey] ?? resolution;
           final currentActive = state.active.map((item) {
-            if (item.lessonId == lessonId && item.resolution == resolution) {
+            if (item.lessonId == lessonId && item.resolution == eff) {
               return ActiveDownload(
                 lessonId: lessonId,
                 title: title,
@@ -190,10 +218,13 @@ class DownloadsCubit extends Cubit<DownloadsState> {
       );
 
       _activeDownloaders.remove(downloadKey);
+      _effectiveResolutions.remove(downloadKey);
       final remainingActive = state.active
           .where(
             (item) =>
-                item.lessonId != lessonId || item.resolution != resolution,
+                item.lessonId != lessonId ||
+                (item.resolution != resolution &&
+                    item.resolution != effectiveResolution),
           )
           .toList();
 
@@ -201,17 +232,19 @@ class DownloadsCubit extends Cubit<DownloadsState> {
       await refresh(); // Refresh completed list
     } catch (e) {
       _activeDownloaders.remove(downloadKey);
+      final eff = _effectiveResolutions.remove(downloadKey) ?? resolution;
       final remainingActive = state.active
           .where(
             (item) =>
-                item.lessonId != lessonId || item.resolution != resolution,
+                item.lessonId != lessonId ||
+                (item.resolution != resolution && item.resolution != eff),
           )
           .toList();
       // Surface the failure instead of silently dropping the item - the
       // screen shows lastError with a retry affordance.
       emit(state.copyWith(
         active: remainingActive,
-        lastError: 'Download failed ($title $effectiveResolution): $e',
+        lastError: 'Download failed ($title $eff): $e',
       ));
     }
   }
@@ -221,16 +254,17 @@ class DownloadsCubit extends Cubit<DownloadsState> {
   void cancelDownload(String lessonId, String resolution) {
     final downloadKey = '${lessonId}_$resolution';
     if (_activeDownloaders.containsKey(downloadKey)) {
-      // Note: VideoDownloader needs cancel support.
-      // For now we'll just remove it from state and stop the loop if possible
-      // Realistically we need a way to stop the 'downloadVideo' future.
+      // close() cancels in-flight segment fetches and cleans the partial dir.
       _activeDownloaders[downloadKey]?.close();
       _activeDownloaders.remove(downloadKey);
     }
+    final eff = _effectiveResolutions.remove(downloadKey) ?? resolution;
 
     final remainingActive = state.active
         .where(
-          (item) => item.lessonId != lessonId || item.resolution != resolution,
+          (item) =>
+              item.lessonId != lessonId ||
+              (item.resolution != resolution && item.resolution != eff),
         )
         .toList();
     emit(state.copyWith(active: remainingActive));
