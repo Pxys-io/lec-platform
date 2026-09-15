@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:developer' as dev;
+import 'package:flutter/foundation.dart';
 import '../../../repositories/misc_repository.dart';
 
 /// Reports playback progress to `POST /stats/watch` periodically and on
@@ -59,7 +60,12 @@ class WatchProgressTracker {
         'last_position': _lastPosition.inMilliseconds / 1000.0,
         if (deviceInfo != null) 'device_info': deviceInfo,
       });
+      debugPrint(
+        '[PLAYER] watch-report ok lesson=${lessonId.substring(0, 8)} '
+        'pct=${pct.toStringAsFixed(0)} pos=${(_lastPosition.inMilliseconds / 1000).toStringAsFixed(0)}s',
+      );
     } catch (e) {
+      debugPrint('[PLAYER] watch-report FAILED: $e');
       dev.log('watch progress report failed: $e');
     }
   }

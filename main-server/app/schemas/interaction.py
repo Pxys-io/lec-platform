@@ -126,9 +126,10 @@ class CertificateResponse(BaseModel):
 class StatsOverview(BaseModel):
     total_users: int
     total_courses: int
-    total_lessons: int
-    new_users_this_month: int
-    active_users_this_month: int
+    total_lessons: int = 0
+    total_quizzes: int = 0
+    new_users_this_month: int = 0
+    active_users_this_month: int = 0
     total_watch_time: float
     weekly_unique_users: list[dict] = []
     monthly_watch_stats: list[dict] = []
