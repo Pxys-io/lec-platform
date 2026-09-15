@@ -81,6 +81,13 @@ video-server/, dashboard-v2/).
 - Main server: `cd main-server && .venv/bin/uvicorn app.main:app --reload --port 8000`, tests `.venv/bin/python test_api.py` (or `pytest`)
 - Video server: `cd video-server && .venv/bin/uvicorn app.main:app --reload --port 8001`, tests `.venv/bin/python test_api.py`
 - Agent app: `cd agent && flutter pub get && flutter run`, checks `flutter analyze`
+- Agent app (clean logs): `cd agent && ./logrun.sh` instead of `flutter run` —
+  strips Android framework noise (BLASTBufferQueue/InputTransport/gralloc),
+  hot-reload keys still work. The filtered stream is ALSO saved to
+  `agent/logs/run-<timestamp>.log` (latest 5 kept, gitignored) — always read
+  the latest log file there when diagnosing app issues instead of asking the
+  user to paste logcat. App debug tags: `[PLAYER]` (playback), `[VIEWER]`
+  (documents).
 - Dashboard: `cd dashboard-v2 && npm run dev`, build `npm run build`, deploy via rsync `dist/` to `ec2r:/root/repos/lec/dashboard/dist/`
 - E2E (dashboard, on ec2r): `/tmp/puppeteer-upload/*.js` — `dash2_e2e.js`, `endpoints_e2e.js`, `qol_e2e.js`, `scope_e2e.js`
 - Production: main server on EC2 (`ec2r`), cloudflared tunnels for public URLs (see `tunnel.conf`).
