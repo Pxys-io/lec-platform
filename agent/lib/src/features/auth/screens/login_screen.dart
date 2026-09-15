@@ -63,12 +63,12 @@ class _LoginScreenState extends State<LoginScreen> {
                 children: [
                   const SizedBox(height: 40),
                   Text(
-                    'Welcome Back',
+                    'Welcome back',
                     style: Theme.of(context).textTheme.displayLarge,
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Sign in to continue your journey',
+                    'Sign in to keep learning',
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
                   const SizedBox(height: 40),

@@ -67,7 +67,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Create Account',
+                    'Create account',
                     style: Theme.of(context).textTheme.displayLarge,
                   ),
                   const SizedBox(height: 8),

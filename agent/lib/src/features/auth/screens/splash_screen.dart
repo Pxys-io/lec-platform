@@ -79,13 +79,6 @@ class _SplashScreenState extends State<SplashScreen> {
                 context,
               ).textTheme.displayLarge?.copyWith(color: Colors.white),
             ),
-            const SizedBox(height: 4),
-            Text(
-              'Learn. Engage. Complete.',
-              style: Theme.of(
-                context,
-              ).textTheme.bodyMedium?.copyWith(color: Colors.white70),
-            ),
           ],
         ),
       ),

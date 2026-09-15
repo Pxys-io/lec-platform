@@ -52,7 +52,7 @@ class PlayerOverlays extends StatelessWidget {
             child: Opacity(
               opacity: manifest!.watermarkOpacity.clamp(0.0, 1.0),
               child: Text(
-                '$userEmail — $studentId',
+                '$userEmail • $studentId',
                 style: TextStyle(
                   color: _hexColor(manifest!.watermarkColor),
                   fontSize: manifest!.watermarkFontSize.toDouble(),

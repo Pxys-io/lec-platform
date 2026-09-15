@@ -767,7 +767,7 @@ class _QuizSessionScreenState extends State<QuizSessionScreen> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Your answer: ${given?.trim().isNotEmpty == true ? given : '—'}',
+                        'Your answer: ${given?.trim().isNotEmpty == true ? given : 'Not answered'}',
                         style: TextStyle(
                           color: ok ? Colors.green[800] : Colors.red[800],
                         ),

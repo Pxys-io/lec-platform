@@ -375,7 +375,7 @@ class _QBankSessionScreenState extends State<QBankSessionScreen> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Your answer: ${given.trim().isNotEmpty ? given : '—'}',
+                      'Your answer: ${given.trim().isNotEmpty ? given : 'Not answered'}',
                       style: TextStyle(color: ok ? Colors.green[800] : Colors.red[800]),
                     ),
                     if (!ok) ...[

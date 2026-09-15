@@ -2,6 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'app_colors.dart';
 
+// Shape scale (single system, applied everywhere):
+// - cards, sheets, dialogs: 16-20
+// - buttons: pill (30)
+// - chips, badges, small adornments: 4-8
+// - 2px: hairline handles/dividers only (not a corner style)
+// - chat bubbles: 24 (conversation convention)
 class AppTheme {
   static ThemeData get light {
     return ThemeData(
@@ -15,35 +21,35 @@ class AppTheme {
         error: AppColors.error,
       ),
       scaffoldBackgroundColor: AppColors.background,
-      textTheme: GoogleFonts.interTextTheme().copyWith(
-        displayLarge: GoogleFonts.inter(
+      textTheme: GoogleFonts.outfitTextTheme().copyWith(
+        displayLarge: GoogleFonts.outfit(
           fontSize: 24,
           fontWeight: FontWeight.w700,
           letterSpacing: -0.5,
           color: AppColors.textPrimaryLight,
         ),
-        titleLarge: GoogleFonts.inter(
+        titleLarge: GoogleFonts.outfit(
           fontSize: 18,
           fontWeight: FontWeight.w600,
           color: AppColors.textPrimaryLight,
         ),
-        titleMedium: GoogleFonts.inter(
+        titleMedium: GoogleFonts.outfit(
           fontSize: 15,
           fontWeight: FontWeight.w600,
           color: AppColors.textPrimaryLight,
         ),
-        bodyLarge: GoogleFonts.inter(
+        bodyLarge: GoogleFonts.outfit(
           fontSize: 16,
           fontWeight: FontWeight.w400,
           color: AppColors.textPrimaryLight,
         ),
-        bodyMedium: GoogleFonts.inter(
+        bodyMedium: GoogleFonts.outfit(
           fontSize: 14,
           fontWeight: FontWeight.w400,
           height: 1.5,
           color: AppColors.textPrimaryLight,
         ),
-        bodySmall: GoogleFonts.inter(
+        bodySmall: GoogleFonts.outfit(
           fontSize: 12,
           fontWeight: FontWeight.w400,
           color: AppColors.textSecondaryLight,
@@ -61,6 +67,8 @@ class AppTheme {
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.secondary,
           foregroundColor: Colors.white,
+          // Semibold labels: white on secondary passes large-text contrast.
+          textStyle: const TextStyle(fontWeight: FontWeight.w600),
           // Finite default width: an infinite minimum explodes layout for
           // any ElevatedButton placed in a Row (dialog actions, nav rows).
           // Full-bleed buttons opt in with SizedBox(width: double.infinity).
@@ -86,35 +94,35 @@ class AppTheme {
         error: AppColors.error,
       ),
       scaffoldBackgroundColor: AppColors.surfaceDark,
-      textTheme: GoogleFonts.interTextTheme().copyWith(
-        displayLarge: GoogleFonts.inter(
+      textTheme: GoogleFonts.outfitTextTheme().copyWith(
+        displayLarge: GoogleFonts.outfit(
           fontSize: 24,
           fontWeight: FontWeight.w700,
           letterSpacing: -0.5,
           color: AppColors.textPrimaryDark,
         ),
-        titleLarge: GoogleFonts.inter(
+        titleLarge: GoogleFonts.outfit(
           fontSize: 18,
           fontWeight: FontWeight.w600,
           color: AppColors.textPrimaryDark,
         ),
-        titleMedium: GoogleFonts.inter(
+        titleMedium: GoogleFonts.outfit(
           fontSize: 15,
           fontWeight: FontWeight.w600,
           color: AppColors.textPrimaryDark,
         ),
-        bodyLarge: GoogleFonts.inter(
+        bodyLarge: GoogleFonts.outfit(
           fontSize: 16,
           fontWeight: FontWeight.w400,
           color: AppColors.textPrimaryDark,
         ),
-        bodyMedium: GoogleFonts.inter(
+        bodyMedium: GoogleFonts.outfit(
           fontSize: 14,
           fontWeight: FontWeight.w400,
           height: 1.5,
           color: AppColors.textPrimaryDark,
         ),
-        bodySmall: GoogleFonts.inter(
+        bodySmall: GoogleFonts.outfit(
           fontSize: 12,
           fontWeight: FontWeight.w400,
           color: AppColors.textSecondaryDark,
@@ -132,7 +140,8 @@ class AppTheme {
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.secondary,
           foregroundColor: Colors.white,
-          // See light theme: finite default, full-bleed via SizedBox.
+          // See light theme: semibold labels, finite default width.
+          textStyle: const TextStyle(fontWeight: FontWeight.w600),
           minimumSize: const Size(64, 50),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(30),

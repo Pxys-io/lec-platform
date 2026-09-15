@@ -217,7 +217,9 @@ class HomeScreen extends StatelessWidget {
                         final course = courses[index];
                         return AppCourseCard(
                           title: course.title,
-                          subtitle: course.visibility,
+                          subtitle: course.tags.isNotEmpty
+                              ? course.tags.join(' • ')
+                              : '${course.visibility[0].toUpperCase()}${course.visibility.substring(1)} course',
                           thumbnailUrl: course.thumbnailUrl,
                           onTap: () =>
                               context.push('/course-detail', extra: course),

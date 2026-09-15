@@ -297,13 +297,9 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text('Instructor', style: Theme.of(context).textTheme.bodySmall),
-                          Text('Course Instructor', style: Theme.of(context).textTheme.titleMedium),
+                          Text('Course team', style: Theme.of(context).textTheme.titleMedium),
                         ],
                       ),
-                      const Spacer(),
-                      const Icon(LucideIcons.star, color: Colors.amber, size: 16),
-                      const SizedBox(width: 4),
-                      const Text('4.8'),
                     ],
                   ),
                   const SizedBox(height: 24),
@@ -410,8 +406,8 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
                                 if (isLocked)
                                   Text(
                                     lesson.lockType == 'quiz'
-                                        ? 'Locked — pass the previous quiz to unlock'
-                                        : 'Locked — finish the previous lesson to unlock',
+                                        ? 'Locked. Pass the previous quiz to unlock'
+                                        : 'Locked. Finish the previous lesson to unlock',
                                     style: const TextStyle(fontSize: 11, color: Colors.orange),
                                   ),
                                 if (!isLocked && hasVideo && hasQuiz)
