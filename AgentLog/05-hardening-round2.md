@@ -177,3 +177,12 @@ hardcoded `ENCRYPTION_KEY` placeholder in build tooling.
     zero-never-overwrites guard + boot tags + write-ok logging kept as
     defense in depth; pending-seek (apply on valid duration) kept for HLS
     timing. User confirmed: works.
+- **Device count in Profile settings (built + deployed).**
+  - New self-service endpoints `GET /users/me/devices` (count+limit+list)
+    and `DELETE /users/me/devices/{device_id}` (placed before `/{user_id}`
+    routes to avoid collision). Profile shows "N of M devices used" row +
+    bottom sheet with per-device type/last-active, "This device" badge, and
+    remove-with-confirm for others. Verified live (list/delete/404).
+  - Deploy note: first restart raced the git pull (ImportError on a
+    half-written tree); clean restart fixed it. Lesson: pull, verify import,
+    then restart.
