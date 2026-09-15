@@ -12,6 +12,7 @@ from app.models import User, UserProfile, UserCourseAccess, UserDevice, UserRole
 from app.schemas import (
     UserCreate,
     UserUpdate,
+    UserAdminUpdate,
     UserResponse,
     UserCourseAccessCreate,
     QBankAccessCreate,
@@ -193,7 +194,7 @@ def create_user(
 @router.put("/{user_id}", response_model=UserResponse)
 def update_user(
     user_id: str,
-    request: UserUpdate,
+    request: UserAdminUpdate,
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
 ):
@@ -422,6 +423,50 @@ def revoke_access(
     db.commit()
 
     return {"message": "Access revoked successfully"}
+
+
+@router.get("/me/devices", response_model=dict)
+def get_my_devices(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    devices = db.exec(
+        select(UserDevice).where(UserDevice.user_id == user.id).order_by(UserDevice.last_login.desc())
+    ).all()
+
+    return {
+        "user_id": user.id,
+        "device_limit": user.device_limit,
+        "devices": [
+            {
+                "device_id": d.device_id,
+                "device_type": d.device_type,
+                "last_login": d.last_login,
+                "created_at": d.created_at,
+            }
+            for d in devices
+        ],
+    }
+
+
+@router.delete("/me/devices/{device_id}")
+def delete_my_device(
+    device_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    d = db.exec(
+        select(UserDevice).where(
+            (UserDevice.user_id == user.id) & (UserDevice.device_id == device_id)
+        )
+    ).first()
+    if not d:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
+
+    db.delete(d)
+    db.commit()
+
+    return {"message": "Device removed"}
 
 
 @router.get("/{user_id}/devices", response_model=dict)

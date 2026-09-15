@@ -72,4 +72,14 @@ class UserRepository {
   Future<void> resetUserDevices(String userId) async {
     await apiClient.post('/users/$userId/devices/reset');
   }
+
+  /// Own devices + limit for the signed-in user (Profile settings).
+  Future<Map<String, dynamic>> getMyDevices() async {
+    final response = await apiClient.get('/users/me/devices');
+    return Map<String, dynamic>.from(response as Map);
+  }
+
+  Future<void> deleteMyDevice(String deviceId) async {
+    await apiClient.delete('/users/me/devices/$deviceId');
+  }
 }
