@@ -148,3 +148,13 @@ hardcoded `ENCRYPTION_KEY` placeholder in build tooling.
     list (backend in-progress-only rule); the 2 items visible now are older
     0% rows. New watches will appear after exiting the player (or
     pull-to-refresh).
+- **Zombie 20% downloads (user-reported, fixed `e4ad0c3`).**
+  - The course tile requests 1080p; videos with lower max trigger the cubit's
+    404 fallback (e.g. 360p). The first progress callback replaced the item's
+    resolution while matching still used the requested one — later updates,
+    completion-removal, and cancel all missed → "20% downloading..." stuck
+    forever with a dead cancel button, even though bytes finished (5/5).
+  - Fix: per-download effective-resolution map, locked in (with a state sync
+    emit) the moment the fallback resolves; progress/removal/cancel all match
+    on it. Stuck items are memory-only state, so a fresh app start clears any
+    existing zombies.
