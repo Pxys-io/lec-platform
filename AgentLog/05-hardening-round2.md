@@ -94,7 +94,18 @@ hardcoded `ENCRYPTION_KEY` placeholder in build tooling.
   - Blank PDFs: NOT a viewer bug — my earlier server-side placeholder PDFs
     were empty shells with no content stream (render as blank, zero errors).
     Replaced all three sample PDFs with real single-page text PDFs (valid
-    xref, Helvetica content); verified structurally + served with content.- **Continue Learning empty though videos started (user-reported, fixed
+    xref, Helvetica content); verified structurally + served with content.
+- **Results-screen Retake crash + quiz progress persistence (fixed `05963fa`).**
+  - The crash recurred on the results screen (`ElevatedButton.icon` in a
+    Row) — whack-a-mole patching wasn't enough. Systemic fix: theme default
+    is now finite (`Size(64, 50)`); the 5 full-bleed buttons (login, register,
+    logout, enroll sheet, onboarding) got explicit `SizedBox(width:
+    double.infinity)` wrappers. The bug class is dead: any future
+    ElevatedButton in a Row is safe by default.
+  - Quiz progress now auto-saves (answers + index to SharedPreferences on
+    every answer/navigation), restores automatically with a snackbar when the
+    quiz is reopened, clears on submit/retake, and has a reset action (top
+    bar) with confirm.- **Continue Learning empty though videos started (user-reported, fixed
   `6ff2ec3`, deployed, verified 200/200).**
   - Debug path: prod DB showed the user's reports DO arrive; `/stats/
     continue-watching` returns 2 items; but `/stats/overview` **500s for
