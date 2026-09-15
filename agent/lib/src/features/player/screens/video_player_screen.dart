@@ -407,70 +407,117 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
 
       String videoUrl;
       Map<String, String> headers = {};
-      String playlistContent;
+      String playlistContent = '';
+      String? offlinePlayPath;
 
       if (isDownloaded) {
         final prefs = await SharedPreferences.getInstance();
-        await _localServer.start(
-          '${appDir.path}/downloads',
-          serverMode: prefs.getString('server_mode') ?? 'hybrid',
-          mismatchAction: prefs.getString('mode_mismatch_action') ?? 'warn',
-          downloadPolicy: prefs.getString('download_policy') ?? 'allow',
-        );
+        final srvMode = prefs.getString('server_mode') ?? 'hybrid';
+        final mismatchAction =
+            prefs.getString('mode_mismatch_action') ?? 'warn';
+        final dlMode = await downloader.readDownloadMode(
+              widget.lessonId,
+              resolution.resolution,
+            ) ??
+            'hybrid';
 
-        if (_localServer.blockReason != null) {
-          setState(() {
-            _modeMismatchWarning = true;
-            _modeMismatchMessage =
-                _localServer.blockReason!.startsWith('MODE_MISMATCH_BLOCK')
-                ? 'This video was downloaded in a mode no longer supported by the server. Admin has blocked playback.'
-                : 'This video was downloaded in a mode no longer supported. Auto-deleted per admin policy.';
-          });
-
-          if (_localServer.blockReason == 'MODE_MISMATCH_AUTO_DELETED') {
+        // Dart-side mode policy (no local server needed for this check).
+        if (dlMode != srvMode) {
+          if (mismatchAction == 'block') {
+            playerLog('offline blocked: mode mismatch dl=$dlMode srv=$srvMode');
             if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(_modeMismatchMessage),
-                  backgroundColor: Colors.red,
-                ),
-              );
+              setState(() {
+                _modeMismatchWarning = true;
+                _modeMismatchMessage =
+                    'This video was downloaded in a mode no longer supported by the server. Admin has blocked playback.';
+              });
             }
             return;
           }
-          return;
-        }
-
-        videoUrl =
-            'http://localhost:${_localServer.port}/playlist/${widget.lessonId}/${resolution.resolution}.m3u8';
-        headers = {'Authorization': 'Bearer ${_localServer.authToken}'};
-        _isLocal = true;
-
-        final playlistFile = File(
-          '${appDir.path}/downloads/${widget.lessonId}/${resolution.resolution}/playlist.m3u8',
-        );
-        playlistContent = await playlistFile.readAsString();
-
-        final modeFile = File(
-          '${appDir.path}/downloads/${widget.lessonId}/${resolution.resolution}/.mode',
-        );
-        if (await modeFile.exists()) {
-          final dlMode = await modeFile.readAsString();
-          final srvMode = prefs.getString('server_mode') ?? 'hybrid';
-          if (dlMode != srvMode) {
+          if (mismatchAction == 'auto_delete') {
+            playerLog('offline auto-delete: mode mismatch');
+            await downloader.deleteDownload(
+              widget.lessonId,
+              resolution.resolution,
+            );
+            if (mounted) {
+              setState(() {
+                _modeMismatchWarning = true;
+                _modeMismatchMessage =
+                    'This video was downloaded in a mode no longer supported. Auto-deleted per admin policy.';
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Download removed per server policy.'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              });
+            }
+            return;
+          }
+          if (mounted) {
             setState(() {
               _modeMismatchWarning = true;
               _modeMismatchMessage =
                   'Mode mismatch: downloaded in "$dlMode" mode, server is now in "$srvMode" mode.';
             });
-          } else {
-            setState(() {
-              _modeMismatchWarning = false;
-            });
+          }
+        } else {
+          if (mounted) {
+            setState(() => _modeMismatchWarning = false);
           }
         }
 
-        dev.log('Playing from local server: $videoUrl');
+        // Clear-format downloads play DIRECTLY from files (no localhost
+        // server - works on Android AND iOS). Legacy downloads fall back
+        // to the local server below.
+        offlinePlayPath = await downloader.buildLocalPlayFile(
+          widget.lessonId,
+          resolution.resolution,
+        );
+        if (offlinePlayPath != null) {
+          playerLog('offline direct-file play $offlinePlayPath');
+          videoUrl = offlinePlayPath;
+          _isLocal = true;
+        } else {
+          playerLog('offline legacy format -> local server fallback');
+          await _localServer.start(
+            '${appDir.path}/downloads',
+            serverMode: srvMode,
+            mismatchAction: mismatchAction,
+            downloadPolicy: prefs.getString('download_policy') ?? 'allow',
+          );
+
+          if (_localServer.blockReason != null) {
+            setState(() {
+              _modeMismatchWarning = true;
+              _modeMismatchMessage =
+                  _localServer.blockReason!.startsWith('MODE_MISMATCH_BLOCK')
+                  ? 'This video was downloaded in a mode no longer supported by the server. Admin has blocked playback.'
+                  : 'This video was downloaded in a mode no longer supported. Auto-deleted per admin policy.';
+            });
+
+            if (_localServer.blockReason == 'MODE_MISMATCH_AUTO_DELETED') {
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(_modeMismatchMessage),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
+              return;
+            }
+            return;
+          }
+
+          videoUrl =
+              'http://localhost:${_localServer.port}/playlist/${widget.lessonId}/${resolution.resolution}.m3u8';
+          headers = {'Authorization': 'Bearer ${_localServer.authToken}'};
+          _isLocal = true;
+
+          dev.log('Playing from local server: $videoUrl');
+        }
       } else {
         _isLocal = false;
         final cacheDir = await _getCacheDir();
@@ -566,13 +613,15 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
       final oldController = _videoPlayerController;
       final oldChewie = _chewieController;
 
-      if (_isLocal) {
+      if (_isLocal && offlinePlayPath == null) {
         playerLog('controller=NETWORK-URL local-server port=${_localServer.port}');
         _videoPlayerController = VideoPlayerController.networkUrl(
           Uri.parse(videoUrl),
           httpHeaders: headers,
         );
       } else {
+        // Remote playlists (cached file) and offline direct-file play
+        // both use file:// - no localhost server involved.
         playerLog('controller=FILE path=$videoUrl');
         _videoPlayerController = VideoPlayerController.file(File(videoUrl));
       }

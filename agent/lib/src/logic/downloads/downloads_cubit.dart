@@ -126,7 +126,7 @@ class DownloadsCubit extends Cubit<DownloadsState> {
       downloadedSegments: 0,
     );
 
-    emit(state.copyWith(active: [...state.active, activeItem]));
+    emit(state.copyWith(active: [...state.active, activeItem], lastError: null));
 
     String effectiveResolution = resolution;
     try {
@@ -197,9 +197,16 @@ class DownloadsCubit extends Cubit<DownloadsState> {
                 item.lessonId != lessonId || item.resolution != resolution,
           )
           .toList();
-      emit(state.copyWith(active: remainingActive));
+      // Surface the failure instead of silently dropping the item - the
+      // screen shows lastError with a retry affordance.
+      emit(state.copyWith(
+        active: remainingActive,
+        lastError: 'Download failed ($title $effectiveResolution): $e',
+      ));
     }
   }
+
+  void clearError() => emit(state.copyWith(lastError: null));
 
   void cancelDownload(String lessonId, String resolution) {
     final downloadKey = '${lessonId}_$resolution';

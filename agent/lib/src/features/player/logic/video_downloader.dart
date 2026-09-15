@@ -1,12 +1,16 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:encrypt/encrypt.dart' as hls_crypto;
+import 'package:flutter/foundation.dart';
 
 /// Offline format marker: segments stored HLS-decrypted (clear) with a
 /// self-contained playlist (no EXT-X-KEY, MAP rewritten to local init).
 /// Anything without this marker uses the legacy app-encrypted layout.
 const String kOfflineFormat = 'hls-clear-v1';
+
+void _dlLog(String msg) => debugPrint('[DOWNLOAD] $msg');
 
 class DownloadProgress {
   final int totalSegments;
@@ -27,7 +31,7 @@ class _KeyState {
 }
 
 class VideoDownloader {
-  final Dio _dio = Dio();
+  final Dio _dio;
   final String baseUrl;
   final String authToken;
   final String baseDir;
@@ -37,7 +41,12 @@ class VideoDownloader {
     required this.baseUrl,
     required this.authToken,
     required this.baseDir,
-  });
+  }) : _dio = Dio(
+          BaseOptions(
+            connectTimeout: const Duration(seconds: 20),
+            receiveTimeout: const Duration(seconds: 120),
+          ),
+        );
 
   String get _mainHost {
     try {
@@ -63,18 +72,32 @@ class VideoDownloader {
     return {};
   }
 
-  Future<Uint8List> _getBytes(String url) async {
-    final response = await _dio.get<List<int>>(
-      url,
-      options: Options(
-        headers: _headersFor(url),
-        responseType: ResponseType.bytes,
-      ),
-    );
-    if (response.data == null) {
-      throw Exception('Failed to download $url');
+  Future<Uint8List> _getBytes(String url, {int attempts = 3}) async {
+    Object? lastError;
+    for (var attempt = 1; attempt <= attempts; attempt++) {
+      if (_isCancelled) throw Exception('Download cancelled');
+      try {
+        final response = await _dio.get<List<int>>(
+          url,
+          options: Options(
+            headers: _headersFor(url),
+            responseType: ResponseType.bytes,
+          ),
+        );
+        if (response.data == null) {
+          throw Exception('Empty response for $url');
+        }
+        return Uint8List.fromList(response.data!);
+      } catch (e) {
+        lastError = e;
+        if (_isCancelled) throw Exception('Download cancelled');
+        if (attempt < attempts) {
+          _dlLog('retry $attempt/$attempts $url (${e.runtimeType})');
+          await Future.delayed(Duration(seconds: attempt * 2));
+        }
+      }
     }
-    return Uint8List.fromList(response.data!);
+    throw Exception('Failed to download $url after $attempts attempts: $lastError');
   }
 
   static Uint8List _hexToBytes(String hex) {
@@ -149,8 +172,14 @@ class VideoDownloader {
     if (total == 0) {
       throw Exception('No segments found in playlist');
     }
+    _dlLog('start lesson=$lessonId res=$resolution assets=$total fmp4=$isFmp4');
 
-    void report() {
+    // Throttle progress callbacks: at most one per 250ms (+ always final).
+    var lastReport = DateTime.fromMillisecondsSinceEpoch(0);
+    void report({bool force = false}) {
+      final now = DateTime.now();
+      if (!force && now.difference(lastReport).inMilliseconds < 250) return;
+      lastReport = now;
       onProgress?.call(
         DownloadProgress(
           totalSegments: total,
@@ -229,6 +258,7 @@ class VideoDownloader {
     }
 
     if (_isCancelled) {
+      _dlLog('cancelled lesson=$lessonId res=$resolution at $done/$total');
       if (await downloadDir.exists()) {
         await downloadDir.delete(recursive: true);
       }
@@ -238,7 +268,8 @@ class VideoDownloader {
     final playlistFile = File('${downloadDir.path}/playlist.m3u8');
     await playlistFile.writeAsString(outLines.join('\n'));
     await File('${downloadDir.path}/.fmt').writeAsString(kOfflineFormat);
-    report();
+    report(force: true);
+    _dlLog('done lesson=$lessonId res=$resolution assets=$done/$total');
   }
 
   Future<bool> isDownloaded(String lessonId, String resolution) async {
@@ -247,6 +278,79 @@ class VideoDownloader {
 
     final playlistFile = File('${downloadDir.path}/playlist.m3u8');
     return await playlistFile.exists();
+  }
+
+  /// Offline format of a stored download: 'hls-clear-v1' for the current
+  /// self-contained layout, anything else (or missing) is legacy.
+  Future<String?> offlineFormat(String lessonId, String resolution) async {
+    try {
+      final fmtFile =
+          File('$baseDir/downloads/$lessonId/$resolution/.fmt');
+      if (!await fmtFile.exists()) return null;
+      return (await fmtFile.readAsString()).trim();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Mode recorded when the download was made (server_mode at the time).
+  Future<String?> readDownloadMode(String lessonId, String resolution) async {
+    try {
+      final modeFile =
+          File('$baseDir/downloads/$lessonId/$resolution/.mode');
+      if (!await modeFile.exists()) return null;
+      return (await modeFile.readAsString()).trim();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Builds a directly-playable file:// playlist for a clear-format download
+  /// by rewriting its relative segment/init references to absolute file
+  /// paths. No local HTTP server needed - works on Android AND iOS.
+  /// Returns the play-file path, or null when the download is legacy format
+  /// (serve those through LocalVideoServer instead).
+  Future<String?> buildLocalPlayFile(
+    String lessonId,
+    String resolution,
+  ) async {
+    final dir = Directory('$baseDir/downloads/$lessonId/$resolution');
+    final format = await offlineFormat(lessonId, resolution);
+    if (format != kOfflineFormat) return null;
+    final playlistFile = File('${dir.path}/playlist.m3u8');
+    if (!await playlistFile.exists()) return null;
+
+    final content = await playlistFile.readAsString();
+    final out = <String>[];
+    for (final rawLine in content.split('\n')) {
+      final line = rawLine.trim();
+      if (line.startsWith('#EXT-X-MAP:')) {
+        final m = RegExp(r'URI="([^"]+)"').firstMatch(line);
+        final name = m?.group(1) ?? '';
+        if (name.isEmpty || name.startsWith('http') || name.startsWith('/')) {
+          return null; // not fully offline - don't play half-local
+        }
+        out.add('#EXT-X-MAP:URI="file://${dir.path}/$name"');
+      } else if (line.isNotEmpty && !line.startsWith('#')) {
+        if (line.startsWith('http') || line.startsWith('/')) {
+          return null;
+        }
+        out.add('file://${dir.path}/$line');
+      } else {
+        out.add(rawLine);
+      }
+    }
+    final playFile = File('${dir.path}/play.m3u8');
+    await playFile.writeAsString(out.join('\n'));
+    _dlLog('play-file ready $playFile');
+    return playFile.path;
+  }
+
+  Future<void> deleteDownload(String lessonId, String resolution) async {
+    final dir = Directory('$baseDir/downloads/$lessonId/$resolution');
+    if (await dir.exists()) {
+      await dir.delete(recursive: true);
+    }
   }
 
   void close() {

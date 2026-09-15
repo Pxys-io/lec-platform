@@ -101,7 +101,9 @@ class MiscRepository {
 
   Future<List<Map<String, dynamic>>> getContinueWatching() async {
     final response = await apiClient.get('/stats/continue-watching');
-    return List<Map<String, dynamic>>.from(response);
+    return (response as List)
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
   }
 
   // Messages

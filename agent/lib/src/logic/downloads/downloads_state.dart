@@ -73,25 +73,34 @@ class DownloadsState extends Equatable {
   final List<CompletedDownload> completed;
   final List<ActiveDownload> active;
   final bool isLoading;
+  final String? lastError;
 
   const DownloadsState({
     this.completed = const [],
     this.active = const [],
     this.isLoading = false,
+    this.lastError,
   });
 
   DownloadsState copyWith({
     List<CompletedDownload>? completed,
     List<ActiveDownload>? active,
     bool? isLoading,
+    String? lastError,
   }) {
     return DownloadsState(
       completed: completed ?? this.completed,
       active: active ?? this.active,
       isLoading: isLoading ?? this.isLoading,
+      lastError: lastError,
     );
   }
 
   @override
-  List<Object> get props => [completed, active, isLoading];
+  List<Object> get props => [
+        completed,
+        active,
+        isLoading,
+        if (lastError != null) lastError!,
+      ];
 }

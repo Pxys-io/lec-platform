@@ -21,8 +21,22 @@ class DownloadsScreen extends StatelessWidget {
           ),
         ],
       ),
-      body: BlocBuilder<DownloadsCubit, DownloadsState>(
-        builder: (context, state) {
+      body: BlocListener<DownloadsCubit, DownloadsState>(
+        listenWhen: (prev, next) => prev.lastError != next.lastError,
+        listener: (context, state) {
+          if (state.lastError != null) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(state.lastError!),
+                backgroundColor: Colors.red,
+                duration: const Duration(seconds: 6),
+              ),
+            );
+            context.read<DownloadsCubit>().clearError();
+          }
+        },
+        child: BlocBuilder<DownloadsCubit, DownloadsState>(
+          builder: (context, state) {
           if (state.isLoading &&
               state.completed.isEmpty &&
               state.active.isEmpty) {
@@ -71,7 +85,8 @@ class DownloadsScreen extends StatelessWidget {
               ],
             ],
           );
-        },
+                    },
+        ),
       ),
     );
   }

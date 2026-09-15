@@ -286,8 +286,13 @@ class ApiClient {
 
   dynamic _replaceLocalhostInJson(dynamic data) {
     if (data is Map) {
-      return data.map(
-        (key, value) => MapEntry(key, _replaceLocalhostInJson(value)),
+      // Rebuild as Map<String, dynamic> explicitly: Map.map on a
+      // Map<dynamic, dynamic>-promoted value yields Map<dynamic, dynamic>,
+      // which later explodes in List<Map<String, dynamic>>.from casts.
+      return Map<String, dynamic>.fromEntries(
+        data.entries.map(
+          (e) => MapEntry(e.key.toString(), _replaceLocalhostInJson(e.value)),
+        ),
       );
     } else if (data is List) {
       return data.map((item) => _replaceLocalhostInJson(item)).toList();
