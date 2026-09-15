@@ -120,7 +120,19 @@ hardcoded `ENCRYPTION_KEY` placeholder in build tooling.
     downloads play directly from files (works on iOS where no local server
     is assumed); local server kept only for legacy-format fallback.
     Android `usesCleartextTraffic` + iOS `NSAllowsLocalNetworking` added for
-    that fallback path.- **Continue Learning empty though videos started (user-reported, fixed
+    that fallback path.
+- **Encrypted-at-rest downloads (built, `hls-enc-v1`).**
+  - Segments stored EXACTLY as received (server AES-128 ciphertext, never
+    decrypted on device); each playlist key fetched once with auth into a
+    local `key_N.bin`; playlist keeps EXT-X-KEY with local URIs + original
+    per-segment IVs. Zero crypto code at download beyond what existed.
+  - Playback is pure file:// with relative refs — no server, no token, both
+    platforms. Downloads screen shows a lock badge on encrypted items.
+  - Honest limits: key file sits beside the segments (offline play without a
+    server requires it) — stops casual copy-play cold; a determined user
+    with the whole folder can reassemble (true of any non-hardware-DRM
+    offline). Leak-tracing remains watermarks + screenshot blocking. Caveat:
+    if the server ever rotates a video key, old downloads need re-download.- **Continue Learning empty though videos started (user-reported, fixed
   `6ff2ec3`, deployed, verified 200/200).**
   - Debug path: prod DB showed the user's reports DO arrive; `/stats/
     continue-watching` returns 2 items; but `/stats/overview` **500s for
