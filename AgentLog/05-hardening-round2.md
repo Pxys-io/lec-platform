@@ -71,3 +71,16 @@ hardcoded `ENCRYPTION_KEY` placeholder in build tooling.
     `CourseLoaded.ownedIds`; course detail hides the Enroll bottom sheet when
     owned and shows an "Enrolled" badge. Also re-merged the server-WIP
     materials support in course detail with restored `Lesson` typing.
+- **Lessons stay Locked after Play-next (user-reported, fixed `31e650f`,
+  deployed, APK builds).**
+  - Root cause: the app decided locked-ness from `lockType != 'none'` alone
+    and NEVER evaluated whether the gate was satisfied — every gated lesson
+    showed the lock icon + locked dialog forever, even with 100% watched.
+    Play-next worked only because it bypasses the list UI straight to the
+    player (backend gate passes).
+  - Fix: `LessonResponse.is_locked` computed server-side per user via
+    `check_lesson_access` (same logic that guards playback); Flutter `Lesson`
+    parses it (falls back to lockType when absent) and course detail uses
+    `lesson.isLocked` for icon + tap.
+  - Verified live on prod: Cardiology Essentials shows is_locked=False for
+    satisfied gates, True only where the previous lesson is truly incomplete.
