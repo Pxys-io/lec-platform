@@ -221,6 +221,14 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   static const _localSaveInterval = Duration(seconds: 5);
   bool _firstLoad = true;
 
+  // Pending resume seek: set at load time, applied from the player listener
+  // once ExoPlayer reports a valid duration. Seeking before the timeline
+  // resolves (common with HLS) is silently dropped - this waits it out.
+  double? _pendingSeekSecs;
+  bool _pendingSeekSilent = false;
+  DateTime? _pendingSeekSince;
+  static const _pendingSeekTimeout = Duration(seconds: 15);
+
   /// Resume rules: start from the last known position only when meaningfully
   /// into the video AND meaningfully short of the end ("not at the absolute
   /// end" -> restart from 0 so completed videos replay cleanly).
@@ -247,6 +255,37 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
             v.position.inMilliseconds / 1000.0,
             v.duration.inMilliseconds / 1000.0,
           );
+        }
+        // Apply a pending resume seek as soon as the duration is valid.
+        if (_pendingSeekSecs != null) {
+          final dSecs = v.duration.inMilliseconds / 1000.0;
+          if (dSecs > 0) {
+            final target = _pendingSeekSecs!;
+            final silent = _pendingSeekSilent;
+            _pendingSeekSecs = null;
+            _pendingSeekSince = null;
+            playerLog(
+              'resume: applying seek ${target.toStringAsFixed(0)}s '
+              '(dur ${dSecs.toStringAsFixed(0)}s)',
+            );
+            _videoPlayerController
+                ?.seekTo(Duration(milliseconds: (target * 1000).round()))
+                .then((_) {
+              if (mounted && !silent) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Resumed from ${_fmtDur(target)}'),
+                    duration: const Duration(seconds: 2),
+                  ),
+                );
+              }
+            });
+          } else if (_pendingSeekSince != null &&
+              now.difference(_pendingSeekSince!) > _pendingSeekTimeout) {
+            playerLog('resume: pending seek expired (no valid duration)');
+            _pendingSeekSecs = null;
+            _pendingSeekSince = null;
+          }
         }
         // Seek-proof auto-advance: max position reached >= 90% fires once,
         // whether by natural playback or seeking forward.
@@ -312,16 +351,14 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     }
   }
 
-  /// Seeks to the last known position when it makes sense:
+  /// Decides the resume target at load time; the actual seek is applied
+  /// from the player listener once ExoPlayer reports a valid duration
+  /// (seeking earlier is silently dropped on HLS).
   /// - First load: offline-first local store (never the network).
   /// - Quality switch / reload: in-memory tracker position (seamless).
   /// Skips when near the start or at the absolute end (replay from 0).
   Future<void> _applyResumePosition() async {
-    final controller = _videoPlayerController;
-    if (controller == null || !mounted) return;
-    final durSecs =
-        controller.value.duration.inMilliseconds / 1000.0;
-    if (durSecs <= 0) return;
+    if (!mounted) return;
 
     if (_firstLoad) {
       _firstLoad = false;
@@ -337,28 +374,30 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
           'dur=${saved.duration.toStringAsFixed(0)}s)',
         );
         // Fully-watched position left over: clear so next open is clean.
-        if (saved.duration > 0 &&
-            saved.duration - saved.position < 15) {
+        if (saved.duration > 0 && saved.duration - saved.position < 15) {
           WatchPositionStore().clear(widget.lessonId);
         }
         return;
       }
-      playerLog('resume: seeking to ${target.toStringAsFixed(0)}s (local)');
-      await controller.seekTo(Duration(milliseconds: (target * 1000).round()));
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Resumed from ${_fmtDur(target)}'),
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      }
+      playerLog(
+        'resume: pending seek ${target.toStringAsFixed(0)}s '
+        '(stored dur ${saved.duration.toStringAsFixed(0)}s)',
+      );
+      _pendingSeekSecs = target;
+      _pendingSeekSilent = false;
+      _pendingSeekSince = DateTime.now();
     } else {
       // Quality switch / reload: keep watching where we were, silently.
+      // Old controller's duration is valid; the new one resolves shortly.
       final pos = _watchTracker?.lastPositionSecs ?? 0;
-      if (pos > 5 && durSecs - pos > 5) {
-        playerLog('resume: quality-switch keep at ${pos.toStringAsFixed(0)}s');
-        await controller.seekTo(Duration(milliseconds: (pos * 1000).round()));
+      final dur = _watchTracker?.durationSecs ?? 0;
+      if (pos > 5 && (dur <= 0 || dur - pos > 5)) {
+        playerLog(
+          'resume: pending quality-switch keep at ${pos.toStringAsFixed(0)}s',
+        );
+        _pendingSeekSecs = pos;
+        _pendingSeekSilent = true;
+        _pendingSeekSince = DateTime.now();
       }
     }
   }
