@@ -49,3 +49,6 @@ agent/pubspec.lock
 # Runtime uploads & sqlite journals
 main-server/uploads/
 *.db-journal
+
+# flutter run logs (logrun.sh)
+agent/logs/
