@@ -84,3 +84,14 @@ hardcoded `ENCRYPTION_KEY` placeholder in build tooling.
     `lesson.isLocked` for icon + tap.
   - Verified live on prod: Cardiology Essentials shows is_locked=False for
     satisfied gates, True only where the previous lesson is truly incomplete.
+- **Quiz ElevatedButton crash + blank PDFs (user-reported, fixed).**
+  - Crash: app theme sets `minimumSize: Size(double.infinity, 50)` on ALL
+    elevated buttons; any ElevatedButton placed directly in a Row (quiz
+    Next/End, quiz submit dialog, locked-lesson dialog, qbank submit dialog)
+    gets infinite width → layout explosion. Fixed with finite local
+    `styleFrom(minimumSize:)` on all 5 Row-placed buttons (Column/Container
+    placements are safe and untouched).
+  - Blank PDFs: NOT a viewer bug — my earlier server-side placeholder PDFs
+    were empty shells with no content stream (render as blank, zero errors).
+    Replaced all three sample PDFs with real single-page text PDFs (valid
+    xref, Helvetica content); verified structurally + served with content.
