@@ -312,6 +312,8 @@ def list_course_lessons(
         select(Lesson).where(Lesson.course_id == course_id).order_by(Lesson.order)
     ).all()
 
+    from app.api.v1.lessons import check_lesson_access
+
     return [
         LessonResponse(
             id=lesson.id,
@@ -325,6 +327,7 @@ def list_course_lessons(
             is_published=lesson.is_published,
             created_at=lesson.created_at,
             updated_at=lesson.updated_at,
+            is_locked=not check_lesson_access(db, user, lesson),
         )
         for lesson in lessons
     ]

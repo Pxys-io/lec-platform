@@ -122,6 +122,7 @@ def get_lesson(
         is_published=lesson.is_published,
         created_at=lesson.created_at,
         updated_at=lesson.updated_at,
+        is_locked=False,
     )
 
 

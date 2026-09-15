@@ -63,6 +63,9 @@ class LessonResponse(LessonBase):
     quiz_id: Optional[str] = None
     created_at: datetime
     updated_at: datetime
+    # Whether THIS user currently satisfies the lesson's lock (evaluated
+    # live server-side; the app must use this, not lock_type alone).
+    is_locked: bool = False
 
     class Config:
         from_attributes = True

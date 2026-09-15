@@ -35,9 +35,9 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
   }
 
   static bool _isLocked(Lesson lesson) {
-    // Backend lock values: none | previous_lesson | quiz ('locked' kept for
-    // backward compatibility with older payloads).
-    return lesson.lockType != 'none';
+    // Server-evaluated per-user lock state (previous_lesson/quiz gates live
+    // here). lockType alone can NOT tell whether the gate is satisfied.
+    return lesson.isLocked;
   }
 
   Future<Quiz?> _loadQuizForLesson(BuildContext context, Lesson lesson) async {
