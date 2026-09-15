@@ -135,7 +135,7 @@ class QBankBase(BaseModel):
 
 
 class QBankCreate(QBankBase):
-    pass
+    course_id: Optional[str] = None
 
 
 class QBankUpdate(BaseModel):
@@ -145,11 +145,15 @@ class QBankUpdate(BaseModel):
     thumbnail_url: Optional[str] = None
     tags: Optional[List[str]] = None
     price: Optional[float] = None
+    # Attach/detach course bundle: UUID links, "" unlinks, absent unchanged.
+    course_id: Optional[str] = None
 
 
 class QBankResponse(QBankBase):
     id: str
     instructor_id: str
+    course_id: Optional[str] = None
+    course_title: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
@@ -165,6 +169,9 @@ class QuestionBase(BaseModel):
     explanation: Optional[str] = None
     points: float = 1.0
     tags: List[str] = []
+    subject: Optional[str] = None
+    system: Optional[str] = None
+    topic: Optional[str] = None
     order: int = 0
 
 

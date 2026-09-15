@@ -176,6 +176,9 @@ class QBankSessionCreate(BaseModel):
     qbank_id: str
     title: str
     subjects: list[str] = []
+    systems: list[str] = []
+    topics: list[str] = []
+    tags: list[str] = []
     mode: str = "tutor"  # tutor, timed
     count: int = 20
 
@@ -216,6 +219,59 @@ class QBankQuestionCheckResponse(BaseModel):
     correct: bool
     correct_answer: str
     explanation: Optional[str] = None
+
+
+class TaxonomyTopic(BaseModel):
+    name: str
+    count: int = 0
+
+
+class TaxonomySystem(BaseModel):
+    name: str
+    count: int = 0
+    topics: List[TaxonomyTopic] = []
+
+
+class TaxonomySubject(BaseModel):
+    name: str
+    count: int = 0
+    systems: List[TaxonomySystem] = []
+
+
+class QBankTaxonomyResponse(BaseModel):
+    subjects: List[TaxonomySubject] = []
+    uncategorized: int = 0
+
+
+class QBankOptionStat(BaseModel):
+    text: str
+    count: int = 0
+    pct: float = 0.0
+    is_correct: bool = False
+
+
+class QBankQuestionStatsResponse(BaseModel):
+    question_id: str
+    total_answers: int = 0
+    correct_pct: float = 0.0
+    options: List[QBankOptionStat] = []
+
+
+class QuizAttemptHistoryItem(BaseModel):
+    id: str
+    quiz_id: str
+    quiz_title: str = ""
+    lesson_id: Optional[str] = None
+    lesson_title: Optional[str] = None
+    course_id: Optional[str] = None
+    course_title: Optional[str] = None
+    score: Optional[float] = None
+    passed: Optional[bool] = None
+    started_at: datetime
+    completed_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
 
 
 class ServerConfigCreate(BaseModel):

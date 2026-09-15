@@ -109,6 +109,9 @@ class QBank(SQLModel, table=True):
     visibility: CourseVisibility = Field(default=CourseVisibility.PRIVATE)
     thumbnail_url: Optional[str] = Field(default=None, nullable=True)
     price: float = Field(default=0.0)
+    # Attached course: buying/enrolling in the course includes this QBank.
+    # Null = standalone (separate enrollment/purchase).
+    course_id: Optional[str] = Field(default=None, nullable=True, foreign_key="courses.id")
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -126,6 +129,10 @@ class Question(SQLModel, table=True):
     explanation: Optional[str] = Field(default=None, nullable=True)
     points: float = Field(default=1.0)
     tags: str = Field(default="[]") # JSON list of subjects/tags for filtering in QBank
+    # UWorld-style taxonomy: subject (chapter) -> system -> topic.
+    subject: Optional[str] = Field(default=None, nullable=True)
+    system: Optional[str] = Field(default=None, nullable=True)
+    topic: Optional[str] = Field(default=None, nullable=True)
     order: int = 0
 
 
