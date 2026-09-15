@@ -167,7 +167,15 @@ class DownloadsScreen extends StatelessWidget {
             subtitle: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('${item.resolution} | ${sizeMb.toStringAsFixed(1)} MB'),
+                Row(
+                  children: [
+                    Text('${item.resolution} | ${sizeMb.toStringAsFixed(1)} MB'),
+                    if (item.isEncrypted) ...[
+                      const SizedBox(width: 6),
+                      const Icon(LucideIcons.lock, size: 12, color: Colors.grey),
+                    ],
+                  ],
+                ),
                 if (hasMismatch) ...[
                   const SizedBox(height: 4),
                   Container(

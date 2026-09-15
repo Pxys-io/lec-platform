@@ -21,6 +21,7 @@ class CompletedDownload extends DownloadItem {
   final int sizeInBytes;
   final String modeWhenDownloaded;
   final bool banned;
+  final bool isEncrypted;
 
   const CompletedDownload({
     required super.lessonId,
@@ -31,6 +32,7 @@ class CompletedDownload extends DownloadItem {
     required this.sizeInBytes,
     this.modeWhenDownloaded = 'hybrid',
     this.banned = false,
+    this.isEncrypted = false,
   });
 
   bool get isModeMismatch => modeWhenDownloaded == 'local_only';
@@ -43,6 +45,7 @@ class CompletedDownload extends DownloadItem {
     sizeInBytes,
     modeWhenDownloaded,
     banned,
+    isEncrypted,
   ];
 }
 

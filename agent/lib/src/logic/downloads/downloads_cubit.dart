@@ -61,6 +61,15 @@ class DownloadsCubit extends Cubit<DownloadsState> {
                   modeWhenDownloaded = await modeFile.readAsString();
                 }
 
+                bool isEncrypted = false;
+                try {
+                  final fmtFile = File('${resFolder.path}/.fmt');
+                  if (await fmtFile.exists()) {
+                    final fmt = (await fmtFile.readAsString()).trim();
+                    isEncrypted = fmt == kOfflineEncryptedFormat;
+                  }
+                } catch (_) {}
+
                 bool banned = false;
                 if (modeWhenDownloaded != currentMode &&
                     mismatchAction == 'block') {
@@ -83,6 +92,7 @@ class DownloadsCubit extends Cubit<DownloadsState> {
                     sizeInBytes: totalSize,
                     modeWhenDownloaded: modeWhenDownloaded,
                     banned: banned,
+                    isEncrypted: isEncrypted,
                   ),
                 );
               }

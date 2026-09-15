@@ -10,6 +10,14 @@ import 'package:flutter/foundation.dart';
 /// Anything without this marker uses the legacy app-encrypted layout.
 const String kOfflineFormat = 'hls-clear-v1';
 
+/// Encrypted-at-rest format: segments stored EXACTLY as received from the
+/// server (still AES-128 encrypted), playlist keeps EXT-X-KEY tags with URIs
+/// rewritten to local key_N.bin files (fetched once, with auth, at download
+/// time) and original per-segment IVs preserved. No server, token, or
+/// re-encryption needed at play time - pure file:// playback on both
+/// platforms. Copied segments alone are unplayable ciphertext.
+const String kOfflineEncryptedFormat = 'hls-enc-v1';
+
 void _dlLog(String msg) => debugPrint('[DOWNLOAD] $msg');
 
 class DownloadProgress {
@@ -139,6 +147,7 @@ class VideoDownloader {
     required String playlistContent,
     String modeWhenDownloaded = 'hybrid',
     Function(DownloadProgress)? onProgress,
+    bool storeEncrypted = true,
   }) async {
     final downloadDir = Directory('$baseDir/downloads/$lessonId/$resolution');
     if (!await downloadDir.exists()) {
@@ -158,9 +167,11 @@ class VideoDownloader {
 
     final keyCache = <String, Uint8List>{};
     final mapCache = <String, String>{}; // remote URI -> local file name
+    final keyFileCache = <String, String>{}; // remote key URI -> local key_N.bin
     _KeyState? activeKey;
     var segIndex = 0;
     var mapIndex = 0;
+    var keyIndex = 0;
     var done = 0;
 
     // Count downloadable assets for progress: MAP inits + media segments.
@@ -172,7 +183,8 @@ class VideoDownloader {
     if (total == 0) {
       throw Exception('No segments found in playlist');
     }
-    _dlLog('start lesson=$lessonId res=$resolution assets=$total fmp4=$isFmp4');
+    _dlLog('start lesson=$lessonId res=$resolution assets=$total fmp4=$isFmp4 '
+        'encrypted=$storeEncrypted');
 
     // Throttle progress callbacks: at most one per 250ms (+ always final).
     var lastReport = DateTime.fromMillisecondsSinceEpoch(0);
@@ -197,17 +209,41 @@ class VideoDownloader {
       if (line.startsWith('#EXT-X-KEY:')) {
         if (line.contains('METHOD=NONE')) {
           activeKey = null;
-          continue; // drop the tag: everything stored is clear
+          outLines.add(line);
+          continue;
         }
         final keyUri = _attr(line, 'URI');
         final ivHex = _ivHex(line);
         if (keyUri != null && ivHex != null) {
           var key = keyCache[keyUri];
+          // Key fetch needs auth (proxy URL) - fails loudly without it:
+          // an offline download without its key is unplayable.
           key ??= await _getBytes(keyUri);
           keyCache[keyUri] = key;
           activeKey = _KeyState(key, _hexToBytes(ivHex));
+          if (storeEncrypted) {
+            var keyFile = keyFileCache[keyUri];
+            if (keyFile == null) {
+              keyFile = 'key_${keyIndex++}.bin';
+              await File('${downloadDir.path}/$keyFile')
+                  .writeAsBytes(key);
+              keyFileCache[keyUri] = keyFile;
+              _dlLog('stored key $keyFile (${key.length}B)');
+            }
+            // Preserve the whole tag (METHOD/IV/KEYFORMAT), only the URI
+            // becomes the local key file.
+            outLines.add(line.replaceAll(
+              RegExp(r'URI="[^"]+"'),
+              'URI="$keyFile"',
+            ));
+            continue;
+          }
         }
-        continue; // drop the tag: content is decrypted at download time
+        if (!storeEncrypted) {
+          continue; // drop the tag: content is decrypted at download time
+        }
+        outLines.add(line);
+        continue;
       }
 
       if (line.startsWith('#EXT-X-MAP:')) {
@@ -216,7 +252,7 @@ class VideoDownloader {
         var local = mapCache[mapUri];
         if (local == null) {
           var initBytes = await _getBytes(mapUri);
-          if (activeKey != null) {
+          if (activeKey != null && !storeEncrypted) {
             initBytes = _aes128CbcDecrypt(
               initBytes,
               activeKey.key,
@@ -247,7 +283,7 @@ class VideoDownloader {
             '$baseUrl/videos/$lessonId/segments/$resolution/$line';
       }
       var data = await _getBytes(segmentUrl);
-      if (activeKey != null) {
+      if (activeKey != null && !storeEncrypted) {
         data = _aes128CbcDecrypt(data, activeKey.key, activeKey.iv);
       }
       final localName = 'seg_${segIndex++}.$segExt';
@@ -267,7 +303,9 @@ class VideoDownloader {
 
     final playlistFile = File('${downloadDir.path}/playlist.m3u8');
     await playlistFile.writeAsString(outLines.join('\n'));
-    await File('${downloadDir.path}/.fmt').writeAsString(kOfflineFormat);
+    await File('${downloadDir.path}/.fmt').writeAsString(
+      storeEncrypted ? kOfflineEncryptedFormat : kOfflineFormat,
+    );
     report(force: true);
     _dlLog('done lesson=$lessonId res=$resolution assets=$done/$total');
   }

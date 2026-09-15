@@ -41,8 +41,7 @@ const String kPlaylistCacheVersion = 'v3';
 /// served through the main-server proxy. Stale files from older app versions
 /// (direct video-server URLs, error bodies, truncated downloads) must be
 /// discarded so the player fetches a fresh one instead of playing garbage.
-bool cachedPlaylistLooksValid(String content) {
-  if (!content.contains('#EXTM3U')) return false;
+bool cachedPlaylistLooksValid(String content) {  if (!content.contains('#EXTM3U')) return false;
   // Direct video-server origins (pre-proxy format) are dead since the
   // internal API requires the service token - segments fetched from them
   // 401. Only proxied playlists are playable.
@@ -58,6 +57,41 @@ bool cachedPlaylistLooksValid(String content) {
             t.endsWith('.ts') ||
             t.endsWith('.m4s') ||
             t.endsWith('.mp4'));
+  });
+  return hasSegment;
+}
+
+/// A STORED offline playlist (encrypted-at-rest format) is playable only if
+/// it is fully self-contained: every media/key/init reference must be a
+/// relative local file. Anything pointing at the network (proxy URLs needing
+/// auth, R2, video-server origins) would fail offline and must be rejected
+/// so the user gets a clear error instead of a hung player.
+bool localOfflinePlaylistLooksValid(String content) {
+  if (!content.contains('#EXTM3U')) return false;
+  for (final rawLine in content.split('\n')) {
+    final line = rawLine.trim();
+    if (line.isEmpty) continue;
+    if (line.startsWith('#EXT-X-KEY:') || line.startsWith('#EXT-X-MAP:')) {
+      final m = RegExp(r'URI="([^"]+)"').firstMatch(line);
+      final uri = m?.group(1) ?? '';
+      if (uri.isEmpty || uri.contains('://') || uri.startsWith('/')) {
+        return false;
+      }
+      continue;
+    }
+    if (line.startsWith('#')) continue;
+    // Media segment: must be a relative local file.
+    if (line.contains('://') ||
+        line.startsWith('/') ||
+        line.contains('/internal/videos/')) {
+      return false;
+    }
+  }
+  final hasSegment = content.split('\n').any((l) {
+    final t = l.trim();
+    return t.isNotEmpty &&
+        !t.startsWith('#') &&
+        (t.endsWith('.ts') || t.endsWith('.m4s') || t.endsWith('.mp4'));
   });
   return hasSegment;
 }
