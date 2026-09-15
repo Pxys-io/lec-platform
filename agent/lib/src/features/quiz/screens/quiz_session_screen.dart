@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../models/quiz.dart';
 import '../../../repositories/quiz_repository.dart';
 
@@ -39,6 +41,8 @@ class _QuizSessionScreenState extends State<QuizSessionScreen> {
   bool get _timed =>
       widget.quiz.timeLimit != null && widget.quiz.timeLimit! > 0;
 
+  String get _progressKey => 'quiz_progress_${widget.quiz.id}';
+
   @override
   void initState() {
     super.initState();
@@ -47,6 +51,99 @@ class _QuizSessionScreenState extends State<QuizSessionScreen> {
       _startTimer();
     }
     _loadPreviousAttempt();
+    _restoreProgress();
+  }
+
+  /// Auto-save in-progress answers so a killed app / navigation away never
+  /// loses work. Cleared on submit and on explicit reset.
+  Future<void> _persistProgress() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        _progressKey,
+        jsonEncode({
+          'answers': _userAnswers,
+          'index': _currentQuestionIndex,
+          'savedAt': DateTime.now().toIso8601String(),
+        }),
+      );
+    } catch (_) {}
+  }
+
+  Future<void> _clearProgress() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_progressKey);
+    } catch (_) {}
+  }
+
+  /// Restores auto-saved answers automatically when the quiz is (re)opened.
+  Future<void> _restoreProgress() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_progressKey);
+      if (raw == null || raw.isEmpty) return;
+      final data = jsonDecode(raw);
+      if (data is! Map) return;
+      final answers = data['answers'];
+      if (answers is! Map || answers.isEmpty) return;
+      if (!mounted) return;
+      setState(() {
+        answers.forEach((k, v) {
+          if (v is String && v.trim().isNotEmpty) {
+            _userAnswers[k.toString()] = v;
+          }
+        });
+        final idx = data['index'];
+        if (idx is int) {
+          _currentQuestionIndex = idx.clamp(
+            0,
+            widget.quiz.questions.length - 1,
+          );
+        }
+      });
+      if (mounted && _userAnswers.isNotEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Restored ${_userAnswers.length} saved answer${_userAnswers.length == 1 ? '' : 's'}',
+            ),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _resetProgress() async {
+    final go = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Reset quiz?'),
+        content: const Text(
+          'This clears all your answers for this attempt and starts over.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Reset'),
+          ),
+        ],
+      ),
+    );
+    if (go != true || !mounted) return;
+    await _clearProgress();
+    if (!mounted) return;
+    setState(() {
+      _currentQuestionIndex = 0;
+      _userAnswers.clear();
+      _flagged.clear();
+      _reviewAnswers = {};
+    });
   }
 
   Future<void> _loadPreviousAttempt() async {
@@ -149,6 +246,7 @@ class _QuizSessionScreenState extends State<QuizSessionScreen> {
           _isSubmitted = true;
           _result = result;
         });
+        await _clearProgress();
       }
     } catch (e) {
       if (mounted) {
@@ -162,6 +260,7 @@ class _QuizSessionScreenState extends State<QuizSessionScreen> {
 
   void _retake() {
     _timer?.cancel();
+    _clearProgress();
     setState(() {
       _currentQuestionIndex = 0;
       _userAnswers.clear();
@@ -181,6 +280,7 @@ class _QuizSessionScreenState extends State<QuizSessionScreen> {
       0,
       widget.quiz.questions.length - 1,
     ));
+    _persistProgress();
   }
 
   void _popWithResult() {
@@ -230,6 +330,11 @@ class _QuizSessionScreenState extends State<QuizSessionScreen> {
           ],
         ),
         actions: [
+          IconButton(
+            icon: const Icon(LucideIcons.rotateCcw),
+            tooltip: 'Reset quiz',
+            onPressed: _resetProgress,
+          ),
           if (current != null)
             IconButton(
               icon: Icon(
@@ -355,9 +460,12 @@ class _QuizSessionScreenState extends State<QuizSessionScreen> {
                           return Padding(
                             padding: const EdgeInsets.only(bottom: 12),
                             child: InkWell(
-                              onTap: () => setState(() {
-                                _userAnswers[current.id] = optionText;
-                              }),
+                              onTap: () {
+                                setState(() {
+                                  _userAnswers[current.id] = optionText;
+                                });
+                                _persistProgress();
+                              },
                               child: Container(
                                 padding: const EdgeInsets.all(16),
                                 decoration: BoxDecoration(

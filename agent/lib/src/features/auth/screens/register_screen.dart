@@ -140,9 +140,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       if (state.status == AuthStatus.authenticating) {
                         return const Center(child: CircularProgressIndicator());
                       }
-                      return ElevatedButton(
-                        onPressed: _submit,
-                        child: const Text('Register'),
+                      return SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: _submit,
+                          child: const Text('Register'),
+                        ),
                       );
                     },
                   ),

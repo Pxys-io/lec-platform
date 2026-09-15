@@ -118,9 +118,12 @@ class _LoginScreenState extends State<LoginScreen> {
                           child: CircularProgressIndicator(),
                         );
                       }
-                      return ElevatedButton(
-                        onPressed: _submit,
-                        child: const Text('Login'),
+                      return SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: _submit,
+                          child: const Text('Login'),
+                        ),
                       );
                     },
                   ),

@@ -61,7 +61,10 @@ class AppTheme {
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.secondary,
           foregroundColor: Colors.white,
-          minimumSize: const Size(double.infinity, 50),
+          // Finite default width: an infinite minimum explodes layout for
+          // any ElevatedButton placed in a Row (dialog actions, nav rows).
+          // Full-bleed buttons opt in with SizedBox(width: double.infinity).
+          minimumSize: const Size(64, 50),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(30),
           ),
@@ -129,7 +132,8 @@ class AppTheme {
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.secondary,
           foregroundColor: Colors.white,
-          minimumSize: const Size(double.infinity, 50),
+          // See light theme: finite default, full-bleed via SizedBox.
+          minimumSize: const Size(64, 50),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(30),
           ),

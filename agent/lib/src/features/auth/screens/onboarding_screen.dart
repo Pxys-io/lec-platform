@@ -97,18 +97,21 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 ),
                 Container(
                   constraints: const BoxConstraints(maxWidth: 150),
-                  child: ElevatedButton(
-                    onPressed: () {
-                      if (_currentPage < _pages.length - 1) {
-                        _controller.nextPage(
-                          duration: const Duration(milliseconds: 300),
-                          curve: Curves.easeIn,
-                        );
-                      } else {
-                        context.go('/login');
-                      }
-                    },
-                    child: Text(_currentPage < _pages.length - 1 ? 'Next' : 'Get Started'),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () {
+                        if (_currentPage < _pages.length - 1) {
+                          _controller.nextPage(
+                            duration: const Duration(milliseconds: 300),
+                            curve: Curves.easeIn,
+                          );
+                        } else {
+                          context.go('/login');
+                        }
+                      },
+                      child: Text(_currentPage < _pages.length - 1 ? 'Next' : 'Get Started'),
+                    ),
                   ),
                 ),
               ],

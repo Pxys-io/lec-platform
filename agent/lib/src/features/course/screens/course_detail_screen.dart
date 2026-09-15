@@ -450,15 +450,18 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
                 ),
               ],
             ),
-            child: ElevatedButton(
-              onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => EnrollmentScreen(course: widget.course),
-                  ),
-                );
-              },
-              child: const Text('Enroll Now / Request Access'),
+            child: SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => EnrollmentScreen(course: widget.course),
+                    ),
+                  );
+                },
+                child: const Text('Enroll Now / Request Access'),
+              ),
             ),
           );
         },

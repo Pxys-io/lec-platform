@@ -103,16 +103,20 @@ class ProfileScreen extends StatelessWidget {
               },
             ),
             const SizedBox(height: 32),
-            ElevatedButton(
-              onPressed: () {
-                context.read<AuthCubit>().logout();
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Theme.of(context).colorScheme.errorContainer,
-                foregroundColor: Theme.of(context).colorScheme.onErrorContainer,
-                elevation: 0,
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () {
+                  context.read<AuthCubit>().logout();
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Theme.of(context).colorScheme.errorContainer,
+                  foregroundColor:
+                      Theme.of(context).colorScheme.onErrorContainer,
+                  elevation: 0,
+                ),
+                child: const Text('Logout'),
               ),
-              child: const Text('Logout'),
             ),
           ],
         ),
