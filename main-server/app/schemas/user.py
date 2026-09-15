@@ -17,10 +17,16 @@ class UserCreate(UserBase):
 
 class UserUpdate(BaseModel):
     email: Optional[EmailStr] = None
-    phone: Optional[str] = None
+    # NOTE: phone is intentionally NOT updatable (watermark identity + login
+    # recovery). Set once at registration; changes require admin.
     role: Optional[str] = None
     first_name: Optional[str] = None
     last_name: Optional[str] = None
+
+
+class UserAdminUpdate(UserUpdate):
+    # Admins may correct a mistyped phone (e.g. registration typo).
+    phone: Optional[str] = None
 
 
 class UserResponse(UserBase):

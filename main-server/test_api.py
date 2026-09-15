@@ -232,13 +232,32 @@ def main():
         if test("Submit Quiz", submit_quiz): passed += 1
         else: failed += 1
 
-        # === Access Code Tests ===
+        # === Access Code E2E Tests (dashboard create -> client redeem) ===
+        student_token = ""
+        def student_login():
+            nonlocal student_token
+            r = requests.post(f"{API_PREFIX}/auth/login", json={
+                "email": "student@lec.com",
+                "password": "student123"
+            }, timeout=3)
+            if r.status_code != 200:
+                print(f"  Status: {r.status_code}, Body: {r.text}")
+                return False
+            student_token = r.json().get("access_token", "")
+            return bool(student_token)
+        total += 1
+        if test("Login as Student (redeemer)", student_login): passed += 1
+        else: failed += 1
+
         def create_code():
-            global code
+            global code, course_id
+            # Dashboard side: instructor creates a single-use code.
+            # NOTE: course_id lives at module-global (set by create_course).
             r = requests.post(f"{API_PREFIX}/codes", json={
                 "course_id": course_id,
                 "access_type": "full",
-                "access_duration": 30
+                "access_duration": 30,
+                "max_uses": 1
             }, headers={"Authorization": f"Bearer {ADMIN_TOKEN}"}, timeout=3)
             if r.status_code != 200:
                 print(f"  Status: {r.status_code}, Body: {r.text}")
@@ -253,10 +272,10 @@ def main():
 
         def validate_code():
             global code
-            print(f"  DEBUG: code = '{code}'")
+            # Client side: student redeems in the app.
             r = requests.post(f"{API_PREFIX}/codes/validate", json={
                 "code": code
-            }, headers={"Authorization": f"Bearer {ADMIN_TOKEN}"}, timeout=3)
+            }, headers={"Authorization": f"Bearer {student_token}"}, timeout=3)
             if r.status_code != 200:
                 print(f"  Status: {r.status_code}, Body: {r.text}")
                 return False
@@ -265,6 +284,44 @@ def main():
             return True
         total += 1
         if test("Validate Code", validate_code): passed += 1
+        else: failed += 1
+
+        def redeem_grants_access():
+            global course_id
+            # Redeem must grant the course: visible in /users/me/courses.
+            r = requests.get(
+                f"{API_PREFIX}/users/me/courses",
+                headers={"Authorization": f"Bearer {student_token}"}, timeout=3)
+            if r.status_code != 200:
+                print(f"  Status: {r.status_code}, Body: {r.text}")
+                return False
+            owned = [c.get("id") for c in r.json()]
+            print(f"  Owns course: {course_id in owned}")
+            return course_id in owned
+        total += 1
+        if test("Redeem Grants Course Access", redeem_grants_access): passed += 1
+        else: failed += 1
+
+        def used_up_code_rejected():
+            global code
+            # max_uses=1: second redeem must fail.
+            r = requests.post(f"{API_PREFIX}/codes/validate", json={
+                "code": code
+            }, headers={"Authorization": f"Bearer {student_token}"}, timeout=3)
+            print(f"  Status: {r.status_code} (expect 400)")
+            return r.status_code == 400
+        total += 1
+        if test("Used-Up Code Rejected", used_up_code_rejected): passed += 1
+        else: failed += 1
+
+        def bogus_code_404():
+            r = requests.post(f"{API_PREFIX}/codes/validate", json={
+                "code": "NOPE12345678"
+            }, headers={"Authorization": f"Bearer {student_token}"}, timeout=3)
+            print(f"  Status: {r.status_code} (expect 404)")
+            return r.status_code == 404
+        total += 1
+        if test("Bogus Code 404", bogus_code_404): passed += 1
         else: failed += 1
 
         # === Stats Tests ===

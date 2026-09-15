@@ -279,6 +279,17 @@ def get_material(
             status_code=status.HTTP_404_NOT_FOUND, detail="Material not found"
         )
 
+    # Ownership gate: materials belong to lessons; no course/lesson access
+    # (and no satisfied lock) => no file URL. Prevents ID enumeration by
+    # non-enrolled users and tampered clients.
+    from app.api.v1.lessons import check_lesson_access
+
+    lesson = db.get(Lesson, material.lesson_id)
+    if not lesson or not check_lesson_access(db, user, lesson):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Access denied"
+        )
+
     return MaterialResponse(
         id=material.id,
         lesson_id=material.lesson_id,

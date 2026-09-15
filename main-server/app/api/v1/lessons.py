@@ -270,6 +270,12 @@ def get_lesson_materials(
     if not lesson:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lesson not found")
 
+    # Same ownership gate as single-material fetch: no access => no listing.
+    if not check_lesson_access(db, user, lesson):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Access denied"
+        )
+
     materials = db.exec(select(Material).where(Material.lesson_id == lesson_id)).all()
 
     return [

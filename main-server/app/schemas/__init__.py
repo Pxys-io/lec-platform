@@ -1,6 +1,7 @@
 from app.schemas.user import (
     UserCreate,
     UserUpdate,
+    UserAdminUpdate,
     UserResponse,
     LoginRequest,
     TokenResponse,
@@ -81,6 +82,7 @@ from app.schemas.enrollment import (
 __all__ = [
     "UserCreate",
     "UserUpdate",
+    "UserAdminUpdate",
     "UserResponse",
     "LoginRequest",
     "TokenResponse",

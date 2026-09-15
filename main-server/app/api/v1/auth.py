@@ -256,9 +256,6 @@ def update_me(
             )
         user.email = request.email
 
-    if request.phone:
-        user.phone = request.phone
-
     db.add(user)
     db.flush()
 
