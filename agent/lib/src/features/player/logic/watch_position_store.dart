@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Offline-first watch position store. The last known position of every
@@ -19,10 +20,16 @@ class WatchPositionStore {
     return _prefs ??= await SharedPreferences.getInstance();
   }
 
-  Future<void> save(String lessonId, double positionSecs, double durationSecs) async {
+  Future<void> save(String lessonId, double positionSecs, double durationSecs,
+      {String src = ''}) async {
     final p = await _db();
     await p.setDouble('$_posPrefix$lessonId', positionSecs);
     await p.setDouble('$_durPrefix$lessonId', durationSecs);
+    debugPrint(
+      '[STORE] save ${lessonId.substring(0, 8)} '
+      'pos=${positionSecs.toStringAsFixed(0)} '
+      'dur=${durationSecs.toStringAsFixed(0)} src=$src',
+    );
   }
 
   /// Returns (positionSecs, durationSecs), or null when never watched.
@@ -30,6 +37,11 @@ class WatchPositionStore {
     final p = await _db();
     final pos = p.getDouble('$_posPrefix$lessonId');
     final dur = p.getDouble('$_durPrefix$lessonId');
+    debugPrint(
+      '[STORE] load ${lessonId.substring(0, 8)} '
+      'pos=${pos?.toStringAsFixed(0) ?? 'null'} '
+      'dur=${dur?.toStringAsFixed(0) ?? 'null'}',
+    );
     if (pos == null || dur == null) return null;
     return (position: pos, duration: dur);
   }
@@ -38,5 +50,6 @@ class WatchPositionStore {
     final p = await _db();
     await p.remove('$_posPrefix$lessonId');
     await p.remove('$_durPrefix$lessonId');
+    debugPrint('[STORE] clear ${lessonId.substring(0, 8)}');
   }
 }

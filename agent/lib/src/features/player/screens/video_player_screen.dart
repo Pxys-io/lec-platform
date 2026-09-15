@@ -254,6 +254,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
             widget.lessonId,
             v.position.inMilliseconds / 1000.0,
             v.duration.inMilliseconds / 1000.0,
+            src: 'tick',
           );
         }
         // Apply a pending resume seek as soon as the duration is valid.
@@ -963,7 +964,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
         WatchPositionStore().clear(widget.lessonId);
       } else if (pos > 0) {
         playerLog('exit: saving local position ${pos.toStringAsFixed(0)}s');
-        WatchPositionStore().save(widget.lessonId, pos, dur);
+        WatchPositionStore().save(widget.lessonId, pos, dur, src: 'dispose');
       }
     }
     // Flush final progress FIRST, then reload stats so continue-watching
