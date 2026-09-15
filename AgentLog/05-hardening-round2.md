@@ -106,6 +106,22 @@ hardcoded `ENCRYPTION_KEY` placeholder in build tooling.
     every answer/navigation), restores automatically with a snackbar when the
     quiz is reopened, clears on submit/retake, and has a reset action (top
     bar) with confirm.
+- **Design taste pass (`@design-taste-frontend`, committed `1a43519`).**
+  - Declared read: student mobile edtech app, Material 3, dials 4/3/5.
+    Full landing-page patterns N/A per the skill's own Section 13; applied
+    the product-UI subset only.
+  - Inter → Outfit app-wide (kills the top AI-tell; same GoogleFonts API).
+  - Semibold CTA labels (white-on-secondary passes large-text contrast).
+  - Documented the shape scale (containers 16-24, buttons pill 30,
+    adornments 4-8) in the theme file.
+  - Copy self-audit: sentence-case auth headlines, dropped the invented
+    "Learn. Engage. Complete." backronym, removed the fabricated 4.8 course
+    rating + placeholder instructor name, course cards show tags instead of
+    raw visibility codes, zero em-dashes in visible copy.
+  - Verified: no UI emoji, single Lucide icon family, one locked palette,
+    empty/loading/error states already covered by shared widgets.
+  - Honest limitation: no screenshot verification available in this
+    environment — visual check left to the user on-device.
 - **Downloads stall + offline localhost + continue-watching crash (fixed).**
   - Continue-watching `List<Map>.from` cast crash: `_replaceLocalhostInJson`
     produced `Map<dynamic,dynamic>` (only surfaced once items existed).
