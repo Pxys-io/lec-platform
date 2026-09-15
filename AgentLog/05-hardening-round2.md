@@ -105,7 +105,22 @@ hardcoded `ENCRYPTION_KEY` placeholder in build tooling.
   - Quiz progress now auto-saves (answers + index to SharedPreferences on
     every answer/navigation), restores automatically with a snackbar when the
     quiz is reopened, clears on submit/retake, and has a reset action (top
-    bar) with confirm.- **Continue Learning empty though videos started (user-reported, fixed
+    bar) with confirm.
+- **Downloads stall + offline localhost + continue-watching crash (fixed).**
+  - Continue-watching `List<Map>.from` cast crash: `_replaceLocalhostInJson`
+    produced `Map<dynamic,dynamic>` (only surfaced once items existed).
+    Fixed systemically in ApiClient (rebuild as `Map<String,dynamic>`) +
+    hardened `getContinueWatching`.
+  - Download stalls: Dio had zero timeouts (a hung segment froze progress
+    forever) and zero retries (one flake killed the download silently).
+    Now 20s connect / 120s receive timeouts, 3 attempts with backoff,
+    throttled progress emits, `[DOWNLOAD]` logs, and failures surface in the
+    Downloads screen instead of vanishing.
+  - Offline playback no longer needs the localhost server: clear-format
+    downloads play directly from files (works on iOS where no local server
+    is assumed); local server kept only for legacy-format fallback.
+    Android `usesCleartextTraffic` + iOS `NSAllowsLocalNetworking` added for
+    that fallback path.- **Continue Learning empty though videos started (user-reported, fixed
   `6ff2ec3`, deployed, verified 200/200).**
   - Debug path: prod DB showed the user's reports DO arrive; `/stats/
     continue-watching` returns 2 items; but `/stats/overview` **500s for
