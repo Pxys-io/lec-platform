@@ -251,6 +251,19 @@ class DownloadsCubit extends Cubit<DownloadsState> {
 
   void clearError() => emit(state.copyWith(lastError: null));
 
+  /// Session boundary: cancel every in-flight download and drop all state.
+  /// Called on sign-in and sign-out (files are wiped by SessionWipe).
+  void resetAll() {
+    for (final d in _activeDownloaders.values) {
+      try {
+        d.close();
+      } catch (_) {}
+    }
+    _activeDownloaders.clear();
+    _effectiveResolutions.clear();
+    emit(const DownloadsState());
+  }
+
   void cancelDownload(String lessonId, String resolution) {
     final downloadKey = '${lessonId}_$resolution';
     if (_activeDownloaders.containsKey(downloadKey)) {

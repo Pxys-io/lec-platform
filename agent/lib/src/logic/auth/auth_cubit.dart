@@ -2,11 +2,16 @@ import 'package:hydrated_bloc/hydrated_bloc.dart';
 import '../../backend.dart';
 import '../../repositories/auth_repository.dart';
 import '../../models/user.dart';
+import '../cache/session_wipe.dart';
 import 'auth_state.dart';
 
 class AuthCubit extends HydratedCubit<AuthState> {
   final AuthRepository _authRepository;
   final Backend _backend;
+
+  /// Called after session data is wiped (sign-in / sign-out) so holders of
+  /// in-memory session state (e.g. DownloadsCubit) can reset. Wired in main.
+  Future<void> Function()? onSessionReset;
 
   AuthCubit(this._authRepository, this._backend) : super(AuthState()) {
     _authRepository.apiClient.onUnauthorized = forceLogout;
@@ -33,6 +38,10 @@ class AuthCubit extends HydratedCubit<AuthState> {
         deviceId: _backend.deviceId,
         deviceType: _backend.deviceType,
       );
+      // Zero-cache policy: a new sign-in starts clean (previous account's
+      // downloads/positions must never leak across).
+      await SessionWipe.wipeAll();
+      await onSessionReset?.call();
       final user = await _authRepository.getCurrentUser();
       emit(state.copyWith(status: AuthStatus.authenticated, user: user));
     } catch (e) {
@@ -52,6 +61,8 @@ class AuthCubit extends HydratedCubit<AuthState> {
         deviceId: _backend.deviceId,
         deviceType: _backend.deviceType,
       );
+      await SessionWipe.wipeAll();
+      await onSessionReset?.call();
       final user = await _authRepository.getCurrentUser();
       emit(state.copyWith(status: AuthStatus.authenticated, user: user));
     } catch (e) {
@@ -65,6 +76,9 @@ class AuthCubit extends HydratedCubit<AuthState> {
     try {
       await _authRepository.logout();
     } catch (_) {}
+    // Zero-cache policy: signing out deletes everything downloaded/cached.
+    await SessionWipe.wipeAll();
+    await onSessionReset?.call();
     emit(AuthState(status: AuthStatus.unauthenticated));
   }
 
@@ -75,6 +89,10 @@ class AuthCubit extends HydratedCubit<AuthState> {
 
   void forceLogout() {
     _authRepository.apiClient.clearToken();
+    // Best-effort wipe on forced logout (sync callback): stale session data
+    // must not survive a dead session.
+    SessionWipe.wipeAll();
+    onSessionReset?.call();
     emit(AuthState(status: AuthStatus.unauthenticated));
   }
 

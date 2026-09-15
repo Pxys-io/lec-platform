@@ -58,7 +58,27 @@ class MyApp extends StatelessWidget {
       ],
       child: MultiBlocProvider(
         providers: [
-          BlocProvider(create: (context) => AuthCubit(backend.auth, backend)),
+          BlocProvider(
+            create: (context) {
+              final auth = AuthCubit(backend.auth, backend);
+              // Zero-cache policy: downloads state resets whenever the
+              // session is wiped (sign-in / sign-out / forced logout), and
+              // user-scoped lists reload so the shell never shows the
+              // previous account's data (best-effort; fails silent offline).
+              auth.onSessionReset = () async {
+                try {
+                  context.read<DownloadsCubit>().resetAll();
+                } catch (_) {}
+                try {
+                  await context.read<CourseCubit>().loadCourses();
+                } catch (_) {}
+                try {
+                  await context.read<StatsCubit>().loadStats();
+                } catch (_) {}
+              };
+              return auth;
+            },
+          ),
           BlocProvider(create: (context) => CourseCubit(backend.courses)),
           BlocProvider(create: (context) => LessonCubit(backend.courses)),
           BlocProvider(create: (context) => QBankCubit(backend.quizzes)),
