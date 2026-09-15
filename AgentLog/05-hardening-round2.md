@@ -158,3 +158,9 @@ hardcoded `ENCRYPTION_KEY` placeholder in build tooling.
     emit) the moment the fallback resolves; progress/removal/cancel all match
     on it. Stuck items are memory-only state, so a fresh app start clears any
     existing zombies.
+- **Enroll button fixes (user-reported, fixed).**
+  - Public courses (and "default"-tagged ones) need no enrollment at all —
+    backend grants access without it. Enroll button now hidden for those +
+    owned courses (Enrolled badge covers owned).
+  - Button moved from Scaffold bottomSheet into the scrollable body under
+    the description: always reachable, never clipped by device chrome.
