@@ -144,6 +144,17 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     try {
       final videoRepo = context.read<VideoRepository>();
       playerLog('init lesson=${widget.lessonId}');
+      // Snapshot the saved position BEFORE any controller/listener exists:
+      // the first listener tick fires at position 0 during initialize() and
+      // would otherwise clobber the stored value before resume reads it.
+      _resumeSnapshot = await WatchPositionStore().load(widget.lessonId);
+      playerLog(
+        'resume snapshot pos=${_resumeSnapshot?.position.toStringAsFixed(0) ?? 'null'} '
+        'dur=${_resumeSnapshot?.duration.toStringAsFixed(0) ?? 'null'}',
+      );
+      // Warm stats in the background so the server-side position fallback
+      // (cross-device / pre-feature watches) is fresh when needed.
+      _statsCubit?.loadStats();
       final manifest = await videoRepo.getVideoManifest(widget.lessonId);
 
       _manifest = manifest;
@@ -217,9 +228,12 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   StatsCubit? _statsCubit;
 
   // Offline-first local position: throttled saves during playback.
+  // Sub-second positions are never saved: the first listener tick fires at
+  // ~0 during initialize() and must not clobber a real saved position.
   DateTime _lastLocalSave = DateTime.fromMillisecondsSinceEpoch(0);
   static const _localSaveInterval = Duration(seconds: 5);
   bool _firstLoad = true;
+  ({double position, double duration})? _resumeSnapshot;
 
   // Pending resume seek: set at load time, applied from the player listener
   // once ExoPlayer reports a valid duration. Seeking before the timeline
@@ -245,14 +259,18 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
       final v = _videoPlayerController?.value;
       if (v != null) {
         _watchTracker?.update(v.position, v.duration);
-        // Offline-first: persist position locally, throttled.
+        // Offline-first: persist position locally, throttled. Sub-second
+        // positions are never saved: the first listener tick fires at ~0
+        // during initialize() and must not clobber a real saved position.
         final now = DateTime.now();
+        final posSecs = v.position.inMilliseconds / 1000.0;
         if (now.difference(_lastLocalSave) >= _localSaveInterval &&
-            v.duration.inMilliseconds > 0) {
+            v.duration.inMilliseconds > 0 &&
+            posSecs >= 1) {
           _lastLocalSave = now;
           WatchPositionStore().save(
             widget.lessonId,
-            v.position.inMilliseconds / 1000.0,
+            posSecs,
             v.duration.inMilliseconds / 1000.0,
             src: 'tick',
           );
@@ -363,10 +381,23 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
 
     if (_firstLoad) {
       _firstLoad = false;
-      final saved = await WatchPositionStore().load(widget.lessonId);
+      // Use the snapshot taken in _initializePlayer (before any
+      // controller/listener existed) - a fresh load here would read whatever
+      // the first listener tick already clobbered.
+      var saved = _resumeSnapshot;
+      _resumeSnapshot = null;
       if (saved == null) {
-        playerLog('resume: no local position, start at 0');
-        return;
+        // Fallback: server-side last position (cross-device watches and
+        // watches from before the local store existed).
+        saved = _serverResumePosition();
+        if (saved == null) {
+          playerLog('resume: no local or server position, start at 0');
+          return;
+        }
+        playerLog(
+          'resume: using SERVER position '
+          'pos=${saved.position.toStringAsFixed(0)}s',
+        );
       }
       final target = resumePosition(saved.position, saved.duration);
       if (target == null) {
@@ -408,6 +439,22 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     final m = d.inMinutes;
     final s = d.inSeconds.remainder(60);
     return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+  }
+
+  /// Server-side resume fallback: last_position from continue-watching.
+  /// Duration comes from the live controller (set by the caller before use).
+  ({double position, double duration})? _serverResumePosition() {
+    final state = _statsCubit?.state;
+    if (state is! StatsLoaded) return null;
+    for (final item in state.continueWatching) {
+      if (item['lesson_id'] == widget.lessonId) {
+        final pos = (item['last_position'] as num?)?.toDouble() ?? 0;
+        final durMs = _videoPlayerController?.value.duration.inMilliseconds ?? 0;
+        if (pos <= 0 || durMs <= 0) return null;
+        return (position: pos, duration: durMs / 1000.0);
+      }
+    }
+    return null;
   }
 
   VideoResolution _pickBestQuality(VideoManifest manifest) {    if (!_isAutoQuality) return manifest.resolutions.first;
