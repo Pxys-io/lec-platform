@@ -28,6 +28,16 @@ class CourseDetailScreen extends StatefulWidget {
 }
 
 class _CourseDetailScreenState extends State<CourseDetailScreen> {
+  /// Enroll is only meaningful when the user lacks access AND the course
+  /// isn't open to everyone: public courses (and "default"-tagged ones)
+  /// are accessible without enrollment, per backend check_lesson_access.
+  static bool _needsEnroll(Course course, Set<String> ownedIds) {
+    if (ownedIds.contains(course.id)) return false;
+    if (course.visibility == 'public') return false;
+    if (course.tags.contains('default')) return false;
+    return true;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -319,6 +329,34 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
                     widget.course.description,
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
+                  BlocBuilder<CourseCubit, CourseState>(
+                    builder: (context, courseState) {
+                      final ownedIds = courseState is CourseLoaded
+                          ? courseState.ownedIds
+                          : const <String>{};
+                      if (!_needsEnroll(widget.course, ownedIds)) {
+                        return const SizedBox.shrink();
+                      }
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 16),
+                        child: SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton(
+                            onPressed: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => EnrollmentScreen(
+                                      course: widget.course),
+                                ),
+                              );
+                            },
+                            child:
+                                const Text('Enroll Now / Request Access'),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
                   const SizedBox(height: 24),
                   Text('Curriculum', style: Theme.of(context).textTheme.titleLarge),
                 ],
@@ -430,41 +468,8 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
               return const SliverToBoxAdapter(child: SizedBox.shrink());
             },
           ),
-          const SliverToBoxAdapter(child: SizedBox(height: 80)),
+          const SliverToBoxAdapter(child: SizedBox(height: 16)),
         ],
-      ),
-      bottomSheet: BlocBuilder<CourseCubit, CourseState>(
-        builder: (context, courseState) {
-          final owned = courseState is CourseLoaded &&
-              courseState.ownedIds.contains(widget.course.id);
-          if (owned) return const SizedBox.shrink();
-          return Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Theme.of(context).cardTheme.color,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 10,
-                  offset: const Offset(0, -5),
-                ),
-              ],
-            ),
-            child: SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => EnrollmentScreen(course: widget.course),
-                    ),
-                  );
-                },
-                child: const Text('Enroll Now / Request Access'),
-              ),
-            ),
-          );
-        },
       ),
     );
   }
