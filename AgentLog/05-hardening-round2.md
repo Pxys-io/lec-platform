@@ -94,4 +94,19 @@ hardcoded `ENCRYPTION_KEY` placeholder in build tooling.
   - Blank PDFs: NOT a viewer bug — my earlier server-side placeholder PDFs
     were empty shells with no content stream (render as blank, zero errors).
     Replaced all three sample PDFs with real single-page text PDFs (valid
-    xref, Helvetica content); verified structurally + served with content.
+    xref, Helvetica content); verified structurally + served with content.- **Continue Learning empty though videos started (user-reported, fixed
+  `6ff2ec3`, deployed, verified 200/200).**
+  - Debug path: prod DB showed the user's reports DO arrive; `/stats/
+    continue-watching` returns 2 items; but `/stats/overview` **500s for
+    every student** (student branch omits required `new_users_this_month` +
+    `active_users_this_month`; `total_quizzes` not even in schema). One
+    `loadStats` failure blanked the whole home, hiding the working list.
+  - Fix: schema defaults for those fields (+ added `total_quizzes`, passed
+    from the student branch); `StatsCubit.loadStats` now fetches overview +
+    continue-watching independently (partial failure degrades, never blanks);
+    `[STATS]` logs on loads + `[PLAYER] watch-report ok/FAILED` on every
+    report so this class of issue is visible in logcat next time.
+  - Note for user: videos watched past 90% correctly disappear from the
+    list (backend in-progress-only rule); the 2 items visible now are older
+    0% rows. New watches will appear after exiting the player (or
+    pull-to-refresh).
