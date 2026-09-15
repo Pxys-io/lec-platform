@@ -1,14 +1,18 @@
+import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_pdfview/flutter_pdfview.dart';
 import 'package:http/http.dart' as http;
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../../models/material.dart' as models;
+
+/// Viewer debug logging (debugPrint is stripped from release builds).
+void _viewerLog(String msg) => debugPrint('[VIEWER] $msg');
 
 class DocumentViewerScreen extends StatelessWidget {
   final List<models.Material> materials;
@@ -107,8 +111,8 @@ class DocumentViewerScreen extends StatelessWidget {
   }
 }
 
-/// In-app PDF / document viewer: downloads the file to a temp file and
-/// renders it with PDFView. Falls back to an external app on failure.
+/// In-app PDF viewer: downloads the file to a temp file and renders it
+/// with PDFView. No external-app fallback (in-app only by design).
 class MaterialPdfScreen extends StatefulWidget {
   final models.Material material;
 
@@ -124,16 +128,37 @@ class _MaterialPdfScreenState extends State<MaterialPdfScreen> {
   int _pages = 0;
   int _currentPage = 0;
 
+  bool get _isPdf {
+    final t = widget.material.type.toLowerCase();
+    if (t == 'pdf') return true;
+    if (t == 'document') {
+      return widget.material.url.toLowerCase().split('?').first.endsWith('.pdf');
+    }
+    return false;
+  }
+
   @override
   void initState() {
     super.initState();
-    _download();
+    _viewerLog('open id=${widget.material.id} type=${widget.material.type} url=${widget.material.url}');
+    if (!_isPdf) {
+      setState(() => _error = 'preview-unsupported');
+    } else {
+      _download();
+    }
   }
 
   Future<void> _download() async {
+    setState(() {
+      _error = null;
+      _localPath = null;
+    });
     try {
       final uri = Uri.parse(widget.material.url);
-      final res = await http.get(uri);
+      _viewerLog('download start $uri');
+      final res = await http.get(uri).timeout(const Duration(seconds: 30));
+      _viewerLog('download status=${res.statusCode} bytes=${res.bodyBytes.length} '
+          'content-type=${res.headers['content-type']}');
       if (res.statusCode != 200 || res.bodyBytes.isEmpty) {
         throw Exception('HTTP ${res.statusCode}');
       }
@@ -142,21 +167,14 @@ class _MaterialPdfScreenState extends State<MaterialPdfScreen> {
           'material_${widget.material.id.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_')}.pdf';
       final file = File('${dir.path}/$safeName');
       await file.writeAsBytes(res.bodyBytes, flush: true);
+      _viewerLog('saved ${file.path} size=${await file.length()}');
       if (mounted) setState(() => _localPath = file.path);
+    } on TimeoutException {
+      _viewerLog('download TIMEOUT');
+      if (mounted) setState(() => _error = 'Download timed out. Check your connection and retry.');
     } catch (e) {
+      _viewerLog('download FAILED: $e');
       if (mounted) setState(() => _error = 'Could not load document: $e');
-    }
-  }
-
-  Future<void> _openExternal() async {
-    final uri = Uri.tryParse(widget.material.url);
-    if (uri == null) return;
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not open ${widget.material.url}')),
-      );
     }
   }
 
@@ -166,13 +184,6 @@ class _MaterialPdfScreenState extends State<MaterialPdfScreen> {
       appBar: AppBar(
         title: Text(widget.material.title,
             overflow: TextOverflow.ellipsis),
-        actions: [
-          IconButton(
-            icon: const Icon(LucideIcons.externalLink),
-            tooltip: 'Open externally',
-            onPressed: _openExternal,
-          ),
-        ],
       ),
       body: _error != null
           ? Center(
@@ -183,12 +194,20 @@ class _MaterialPdfScreenState extends State<MaterialPdfScreen> {
                   children: [
                     const Icon(LucideIcons.fileWarning, size: 48),
                     const SizedBox(height: 12),
-                    Text(_error!, textAlign: TextAlign.center),
-                    const SizedBox(height: 16),
-                    ElevatedButton(
-                      onPressed: _openExternal,
-                      child: const Text('Open in external app'),
+                    Text(
+                      _error == 'preview-unsupported'
+                          ? 'This file type cannot be previewed in the app.'
+                          : _error!,
+                      textAlign: TextAlign.center,
                     ),
+                    if (_error != 'preview-unsupported') ...[
+                      const SizedBox(height: 16),
+                      ElevatedButton.icon(
+                        onPressed: _download,
+                        icon: const Icon(LucideIcons.rotateCw),
+                        label: const Text('Retry'),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -203,12 +222,19 @@ class _MaterialPdfScreenState extends State<MaterialPdfScreen> {
                       swipeHorizontal: false,
                       autoSpacing: true,
                       pageFling: true,
-                      onRender: (pages) =>
-                          setState(() => _pages = pages ?? 0),
-                      onPageChanged: (page, _) => setState(
-                          () => _currentPage = page ?? 0),
-                      onError: (e) =>
-                          setState(() => _error = 'Could not render PDF: $e'),
+                      onRender: (pages) {
+                        _viewerLog('pdf rendered pages=$pages');
+                        if (mounted) setState(() => _pages = pages ?? 0);
+                      },
+                      onPageChanged: (page, _) {
+                        if (mounted) setState(() => _currentPage = page ?? 0);
+                      },
+                      onError: (e) {
+                        _viewerLog('pdf RENDER-ERROR: $e');
+                        if (mounted) {
+                          setState(() => _error = 'Could not render PDF: $e');
+                        }
+                      },
                     ),
                     if (_pages > 1)
                       Positioned(
@@ -281,22 +307,18 @@ class _MaterialWebScreenState extends State<MaterialWebScreen> {
   @override
   void initState() {
     super.initState();
+    _viewerLog('open link url=${widget.material.url}');
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setNavigationDelegate(
         NavigationDelegate(
           onPageFinished: (_) =>
               mounted ? setState(() => _loading = false) : null,
+          onWebResourceError: (e) =>
+              _viewerLog('webview ERROR: ${e.errorCode} ${e.description}'),
         ),
       )
       ..loadRequest(Uri.parse(widget.material.url));
-  }
-
-  Future<void> _openExternal() async {
-    final uri = Uri.tryParse(widget.material.url);
-    if (uri != null && await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    }
   }
 
   @override
@@ -305,13 +327,6 @@ class _MaterialWebScreenState extends State<MaterialWebScreen> {
       appBar: AppBar(
         title: Text(widget.material.title,
             overflow: TextOverflow.ellipsis),
-        actions: [
-          IconButton(
-            icon: const Icon(LucideIcons.externalLink),
-            tooltip: 'Open in browser',
-            onPressed: _openExternal,
-          ),
-        ],
       ),
       body: Stack(
         children: [
