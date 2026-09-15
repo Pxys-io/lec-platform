@@ -164,3 +164,16 @@ hardcoded `ENCRYPTION_KEY` placeholder in build tooling.
     owned courses (Enrolled badge covers owned).
   - Button moved from Scaffold bottomSheet into the scrollable body under
     the description: always reachable, never clipped by device chrome.
+- **Resume never seeks though tracking works (user-reported, fixed,
+  verified by user).**
+  - Debug path: `[STORE]` tagging proved tick/dispose saves all landed;
+    yet every open read `(0, dur)`. Root cause: the screen's OWN first
+    listener tick (pos 0 during `initialize()`) wrote `(0, dur)` BEFORE
+    `_applyResumePosition` read the store — resume read its own clobber,
+    not the previous session. Queued behind a parallel session's
+    overlapping work, resolved together: snapshot position in
+    `_initializePlayer` before any controller/listener exists; sub-second
+    saves banned; server `last_position` fallback via warmed stats;
+    zero-never-overwrites guard + boot tags + write-ok logging kept as
+    defense in depth; pending-seek (apply on valid duration) kept for HLS
+    timing. User confirmed: works.
