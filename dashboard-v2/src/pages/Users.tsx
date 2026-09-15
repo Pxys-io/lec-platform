@@ -27,6 +27,7 @@ export default function Users() {
   const [q, setQ] = useState('')
   const [sel, setSel] = useState<U | null>(null)
   const [devices, setDevices] = useState<Dev[]>([])
+  const [banDays, setBanDays] = useState('7')
   const [createOpen, setCreateOpen] = useState(false)
   const [nEmail, setNEmail] = useState('')
   const [nPass, setNPass] = useState('')
@@ -106,13 +107,12 @@ export default function Users() {
                 <button className="btn small" onClick={() => act(() => api.post(`/users/${sel.id}/unban`), 'Unbanned')}>🚫 Lift ban</button>
               ) : (
                 <>
-                  <select defaultValue="7" style={{ width: 'auto' }} data-testid="ban-days">
+                  <select value={banDays} style={{ width: 'auto' }} data-testid="ban-days" onChange={(e) => setBanDays(e.target.value)}>
                     <option value="1">1 day</option><option value="7">7 days</option>
                     <option value="30">30 days</option><option value="365">1 year</option>
                   </select>
                   <button className="btn danger small" data-testid="btn-ban" onClick={() => {
-                    const d = document.querySelector('select[data-testid="ban-days"]') as HTMLSelectElement
-                    act(() => api.post(`/users/${sel.id}/ban?ban_duration_days=${d?.value || 7}`), `Banned ${d?.value || 7}d`)
+                    act(() => api.post(`/users/${sel.id}/ban?ban_duration_days=${banDays}`), `Banned ${banDays}d`)
                   }}>🚫 Ban</button>
                 </>
               )}

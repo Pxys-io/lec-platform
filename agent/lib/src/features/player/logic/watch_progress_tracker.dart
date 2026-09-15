@@ -49,6 +49,10 @@ class WatchProgressTracker {
 
   bool get isComplete => _maxCompletion >= _completionThreshold * 100;
 
+  double get lastPositionSecs => _lastPosition.inMilliseconds / 1000.0;
+
+  double get durationSecs => _duration.inMilliseconds / 1000.0;
+
   Future<void> report() async {
     if (_reported) return;
     final pct = _maxCompletion > 0 ? _maxCompletion : _completionPercent;

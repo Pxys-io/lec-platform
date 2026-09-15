@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
-import { api, setToken, getToken } from './api'
+import { api, setTokens, getToken } from './api'
 
 export interface User {
   id: string
@@ -29,16 +29,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!getToken()) { setLoading(false); return }
     api.get<User>('/auth/me')
       .then(setUser)
-      .catch(() => setToken(null))
+      .catch(() => setTokens(null, null))
       .finally(() => setLoading(false))
   }, [])
 
   const login = async (email: string, password: string) => {
-    const d = await api.post<{ access_token: string }>('/auth/login', { email, password })
-    setToken(d.access_token)
+    const d = await api.post<{ access_token: string; refresh_token: string }>('/auth/login', { email, password })
+    setTokens(d.access_token, d.refresh_token)
     setUser(await api.get<User>('/auth/me'))
   }
-  const logout = () => { api.post('/auth/logout').catch(() => {}); setToken(null); setUser(null) }
+  const logout = () => { api.post('/auth/logout').catch(() => {}); setTokens(null, null); setUser(null) }
 
   const isStaff = !!user && ['admin', 'super_admin', 'instructor'].includes(user.role)
   return <Ctx.Provider value={{ user, loading, login, logout, isStaff }}>{children}</Ctx.Provider>

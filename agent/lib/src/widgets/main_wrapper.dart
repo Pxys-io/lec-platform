@@ -25,6 +25,25 @@ class _MainWrapperState extends State<MainWrapper> {
       context.read<CourseCubit>().loadCourses();
       context.read<StatsCubit>().loadStats();
     });
+    // Home shows continue-watching: reload stats every time the user lands
+    // on /home (player exits, tab switches) so the LATEST session is always
+    // visible instead of a stale snapshot from app start.
+    GoRouter.of(context).routerDelegate.addListener(_onRouteChanged);
+  }
+
+  @override
+  void dispose() {
+    GoRouter.of(context).routerDelegate.removeListener(_onRouteChanged);
+    super.dispose();
+  }
+
+  void _onRouteChanged() {
+    if (!mounted) return;
+    try {
+      if (GoRouterState.of(context).uri.toString() == '/home') {
+        context.read<StatsCubit>().loadStats();
+      }
+    } catch (_) {}
   }
 
   @override

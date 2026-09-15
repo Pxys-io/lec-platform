@@ -1,5 +1,7 @@
 const BASE = '/api/v1'
 let token: string | null = localStorage.getItem('lec_token')
+let refreshToken: string | null = localStorage.getItem('lec_refresh_token')
+let refreshPromise: Promise<boolean> | null = null
 let onUnauthorized: (() => void) | null = null
 
 export function setToken(t: string | null) {
@@ -7,10 +9,37 @@ export function setToken(t: string | null) {
   if (t) localStorage.setItem('lec_token', t)
   else localStorage.removeItem('lec_token')
 }
+export function setTokens(access: string | null, refresh: string | null) {
+  setToken(access)
+  refreshToken = refresh
+  if (refresh) localStorage.setItem('lec_refresh_token', refresh)
+  else localStorage.removeItem('lec_refresh_token')
+}
 export function getToken() { return token }
 export function setUnauthorizedHandler(fn: () => void) { onUnauthorized = fn }
 
-async function req<T>(method: string, path: string, body?: unknown, isForm = false): Promise<T> {
+/** Single-flight refresh: concurrent 401s share one POST /auth/refresh. */
+async function tryRefresh(): Promise<boolean> {
+  if (!refreshToken) return false
+  if (!refreshPromise) {
+    refreshPromise = (async () => {
+      try {
+        const res = await fetch(`${BASE}/auth/refresh?refresh_token=${encodeURIComponent(refreshToken!)}`, { method: 'POST' })
+        if (!res.ok) return false
+        const j = await res.json()
+        setTokens(j.access_token, j.refresh_token)
+        return true
+      } catch {
+        return false
+      } finally {
+        refreshPromise = null
+      }
+    })()
+  }
+  return refreshPromise
+}
+
+async function doReq<T>(method: string, path: string, body?: unknown, isForm = false): Promise<T> {
   const headers: Record<string, string> = {}
   if (token) headers['Authorization'] = `Bearer ${token}`
   if (body !== undefined && !isForm) headers['Content-Type'] = 'application/json'
@@ -20,6 +49,10 @@ async function req<T>(method: string, path: string, body?: unknown, isForm = fal
     body: isForm ? (body as FormData) : body !== undefined ? JSON.stringify(body) : undefined,
   })
   if (res.status === 401) {
+    // Try once to refresh before logging out.
+    if (await tryRefresh()) {
+      return doReq<T>(method, path, body, isForm)
+    }
     setToken(null)
     if (!window.location.pathname.startsWith('/login')) {
       onUnauthorized?.()
@@ -37,9 +70,9 @@ async function req<T>(method: string, path: string, body?: unknown, isForm = fal
 }
 
 export const api = {
-  get: <T>(p: string) => req<T>('GET', p),
-  post: <T>(p: string, b?: unknown) => req<T>('POST', p, b),
-  put: <T>(p: string, b?: unknown) => req<T>('PUT', p, b),
-  del: <T>(p: string) => req<T>('DELETE', p),
-  postForm: <T>(p: string, f: FormData) => req<T>('POST', p, f, true),
+  get: <T>(p: string) => doReq<T>('GET', p),
+  post: <T>(p: string, b?: unknown) => doReq<T>('POST', p, b),
+  put: <T>(p: string, b?: unknown) => doReq<T>('PUT', p, b),
+  del: <T>(p: string) => doReq<T>('DELETE', p),
+  postForm: <T>(p: string, f: FormData) => doReq<T>('POST', p, f, true),
 }

@@ -79,7 +79,7 @@ export default function Courses() {
     try {
       await api.put(`/lessons/${lesson.id}`, { video_id: videoId || '', is_published: !!videoId })
       toast(videoId ? 'Video attached & published' : 'Video detached')
-      setLessons(await api.get<Lesson[]>(`/courses/${lesson.id ? courses.find((c) => c.id === openId)?.id : ''}/lessons`))
+      if (openId) setLessons(await api.get<Lesson[]>(`/courses/${openId}/lessons`))
     } catch (e) { toast(e instanceof Error ? e.message : 'Attach failed', true) }
   }
 

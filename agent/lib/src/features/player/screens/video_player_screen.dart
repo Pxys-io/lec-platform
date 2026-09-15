@@ -14,6 +14,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../logic/local_video_server.dart';
 import '../logic/video_downloader.dart';
 import '../logic/watch_progress_tracker.dart';
+import '../logic/watch_position_store.dart';
 import '../logic/player_debug.dart';
 import '../widgets/player_error_view.dart';
 import '../widgets/player_overlays.dart';
@@ -215,12 +216,38 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   bool _upNextAuto = true;
   StatsCubit? _statsCubit;
 
+  // Offline-first local position: throttled saves during playback.
+  DateTime _lastLocalSave = DateTime.fromMillisecondsSinceEpoch(0);
+  static const _localSaveInterval = Duration(seconds: 5);
+  bool _firstLoad = true;
+
+  /// Resume rules: start from the last known position only when meaningfully
+  /// into the video AND meaningfully short of the end ("not at the absolute
+  /// end" -> restart from 0 so completed videos replay cleanly).
+  static double? resumePosition(double posSecs, double durSecs) {
+    if (durSecs <= 0) return null;
+    if (posSecs < 10) return null;
+    if (durSecs - posSecs < 15) return null;
+    return posSecs;
+  }
+
   void _watchForPlayerErrors() {
     _playerErrorShown = false;
     _videoPlayerController?.addListener(() {
       final v = _videoPlayerController?.value;
       if (v != null) {
         _watchTracker?.update(v.position, v.duration);
+        // Offline-first: persist position locally, throttled.
+        final now = DateTime.now();
+        if (now.difference(_lastLocalSave) >= _localSaveInterval &&
+            v.duration.inMilliseconds > 0) {
+          _lastLocalSave = now;
+          WatchPositionStore().save(
+            widget.lessonId,
+            v.position.inMilliseconds / 1000.0,
+            v.duration.inMilliseconds / 1000.0,
+          );
+        }
         // Seek-proof auto-advance: max position reached >= 90% fires once,
         // whether by natural playback or seeking forward.
         if ((_watchTracker?.isComplete ?? false) && !_upNextTriggered) {
@@ -260,6 +287,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
       );
       _watchForPlayerErrors();
       await _videoPlayerController!.initialize();
+      await _applyResumePosition();
 
       _chewieController = ChewieController(
         videoPlayerController: _videoPlayerController!,
@@ -284,8 +312,65 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     }
   }
 
-  VideoResolution _pickBestQuality(VideoManifest manifest) {
-    if (!_isAutoQuality) return manifest.resolutions.first;
+  /// Seeks to the last known position when it makes sense:
+  /// - First load: offline-first local store (never the network).
+  /// - Quality switch / reload: in-memory tracker position (seamless).
+  /// Skips when near the start or at the absolute end (replay from 0).
+  Future<void> _applyResumePosition() async {
+    final controller = _videoPlayerController;
+    if (controller == null || !mounted) return;
+    final durSecs =
+        controller.value.duration.inMilliseconds / 1000.0;
+    if (durSecs <= 0) return;
+
+    if (_firstLoad) {
+      _firstLoad = false;
+      final saved = await WatchPositionStore().load(widget.lessonId);
+      if (saved == null) {
+        playerLog('resume: no local position, start at 0');
+        return;
+      }
+      final target = resumePosition(saved.position, saved.duration);
+      if (target == null) {
+        playerLog(
+          'resume: skipped (pos=${saved.position.toStringAsFixed(0)}s '
+          'dur=${saved.duration.toStringAsFixed(0)}s)',
+        );
+        // Fully-watched position left over: clear so next open is clean.
+        if (saved.duration > 0 &&
+            saved.duration - saved.position < 15) {
+          WatchPositionStore().clear(widget.lessonId);
+        }
+        return;
+      }
+      playerLog('resume: seeking to ${target.toStringAsFixed(0)}s (local)');
+      await controller.seekTo(Duration(milliseconds: (target * 1000).round()));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Resumed from ${_fmtDur(target)}'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } else {
+      // Quality switch / reload: keep watching where we were, silently.
+      final pos = _watchTracker?.lastPositionSecs ?? 0;
+      if (pos > 5 && durSecs - pos > 5) {
+        playerLog('resume: quality-switch keep at ${pos.toStringAsFixed(0)}s');
+        await controller.seekTo(Duration(milliseconds: (pos * 1000).round()));
+      }
+    }
+  }
+
+  String _fmtDur(double secs) {
+    final d = Duration(seconds: secs.round());
+    final m = d.inMinutes;
+    final s = d.inSeconds.remainder(60);
+    return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+  }
+
+  VideoResolution _pickBestQuality(VideoManifest manifest) {    if (!_isAutoQuality) return manifest.resolutions.first;
 
     final sorted = List<VideoResolution>.from(manifest.resolutions)
       ..sort((a, b) => a.bitrate.compareTo(b.bitrate));
@@ -494,6 +579,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
 
       _watchForPlayerErrors();
       await _videoPlayerController!.initialize();
+      await _applyResumePosition();
 
       _chewieController = ChewieController(
         videoPlayerController: _videoPlayerController!,
@@ -747,6 +833,20 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
 
   @override
   void dispose() {
+    // Final local position: save it, or clear when at the absolute end so
+    // the next open replays from 0.
+    final tracker = _watchTracker;
+    if (tracker != null) {
+      final pos = tracker.lastPositionSecs;
+      final dur = tracker.durationSecs;
+      if (dur > 0 && dur - pos < 10) {
+        playerLog('exit: at end, clearing local position');
+        WatchPositionStore().clear(widget.lessonId);
+      } else if (pos > 0) {
+        playerLog('exit: saving local position ${pos.toStringAsFixed(0)}s');
+        WatchPositionStore().save(widget.lessonId, pos, dur);
+      }
+    }
     // Flush final progress FIRST, then reload stats so continue-watching
     // picks up this session (sequential: GET must see the POSTed row).
     _watchTracker?.dispose().then((_) => _statsCubit?.loadStats());
