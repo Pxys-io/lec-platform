@@ -130,6 +130,9 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
           ),
           if (goToQuiz)
             ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                minimumSize: const Size(88, 40),
+              ),
               onPressed: () => Navigator.of(ctx).pop(true),
               child: const Text('Take prerequisite quiz'),
             ),

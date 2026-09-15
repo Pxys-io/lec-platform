@@ -76,7 +76,11 @@ class _QBankSessionScreenState extends State<QBankSessionScreen> {
           content: Text('$_unanswered of ${widget.questions.length} questions are unanswered.'),
           actions: [
             TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Keep answering')),
-            ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Submit anyway')),
+            ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  minimumSize: const Size(88, 40),
+                ),
+                onPressed: () => Navigator.pop(ctx, true), child: const Text('Submit anyway')),
           ],
         ),
       );

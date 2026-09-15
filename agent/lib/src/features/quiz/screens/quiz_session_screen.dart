@@ -109,6 +109,9 @@ class _QuizSessionScreenState extends State<QuizSessionScreen> {
               child: const Text('Keep answering'),
             ),
             ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                minimumSize: const Size(88, 40),
+              ),
               onPressed: () => Navigator.of(ctx).pop(true),
               child: const Text('Submit anyway'),
             ),
@@ -455,6 +458,9 @@ class _QuizSessionScreenState extends State<QuizSessionScreen> {
                           ),
                         ),
                       ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          minimumSize: const Size(120, 44),
+                        ),
                         onPressed: _isSubmitting
                             ? null
                             : () async {
